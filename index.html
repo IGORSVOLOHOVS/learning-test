@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Мои тесты для повторения</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d29;
+    --text: #eef0f6;
+    --muted: #8b8fa3;
+    --accent: #5b8cff;
+    --good: #2fbf71;
+    --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { font-size: 1.4rem; margin: 10px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .9rem; margin-bottom: 20px; }
+  .card {
+    display: block; background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px 18px; margin-bottom: 12px;
+    text-decoration: none; color: var(--text);
+  }
+  .card:active { transform: scale(0.99); }
+  .card h2 { font-size: 1.05rem; margin: 0 0 6px; }
+  .card .meta { font-size: .82rem; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
+  .progress-mini { height: 6px; background: var(--border); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+  .progress-mini > div { height: 100%; background: var(--accent); }
+  .progress-mini.done > div { background: var(--good); }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Мои тесты для повторения</h1>
+  <div class="subtitle">20 тестов · 50 вопросов каждый · прогресс сохраняется на устройстве</div>
+  <div id="list"></div>
+</div>
+<script src="config.js"></script>
+<script>
+  const TESTS = [
+    ["probability_statistics", "Вероятность и статистика"],
+    ["linear_algebra", "Линейная алгебра (матрицы, SVD)"],
+    ["calculus", "Математический анализ"],
+    ["computer_vision", "Основы Computer Vision"],
+    ["world_models", "Теория World Models"],
+    ["diffusers", "Библиотека diffusers"],
+    ["python_numpy_matplotlib", "Python: NumPy и Matplotlib"],
+    ["physical_chemistry", "Физическая химия"],
+    ["electronics", "Основы электроники"],
+    ["facial_emotion_recognition", "Распознавание эмоций по лицу"],
+    ["first_impression", "Техники первого впечатления"],
+    ["pragmatics_model", "Двухэтапная модель прагматика"],
+    ["photography_exposure", "Выдержка в фотографии"],
+    ["network_drivers", "Сетевые драйверы"],
+    ["low_level_cpp", "Низкоуровневый C++"],
+    ["assembly", "Ассемблер"],
+    ["performance_optimization", "Оптимизация производительности"],
+    ["iso_standards", "ISO стандарты"],
+    ["tiktok_algorithm", "TikTok: алгоритмы рекомендаций"],
+    ["visual_math", "Визуальная математика"]
+  ];
+
+  const list = document.getElementById("list");
+  TESTS.forEach(([slug, title]) => {
+    let state = null;
+    try { state = JSON.parse(localStorage.getItem("learntest_" + slug)); } catch (e) {}
+    const total = 50;
+    const current = state ? state.current : 0;
+    const answered = state ? Object.keys(state.answers || {}).length : 0;
+    const done = current >= total;
+    const pct = Math.round((Math.min(current, total) / total) * 100);
+
+    let correct = 0;
+    if (state && state.answers) {
+      Object.values(state.answers).forEach(a => { if (a.correct) correct++; });
+    }
+
+    const a = document.createElement("a");
+    a.className = "card";
+    a.href = "tests/" + slug + ".html";
+    a.innerHTML =
+      '<h2>' + title + '</h2>' +
+      '<div class="meta"><span>' + (done ? ('Завершено: ' + correct + '/' + total) : (answered > 0 ? ('Пройдено ' + current + '/' + total) : 'Не начато')) + '</span><span>' + pct + '%</span></div>' +
+      '<div class="progress-mini' + (done ? ' done' : '') + '"><div style="width:' + pct + '%"></div></div>';
+    list.appendChild(a);
+  });
+</script>
+</body>
+</html>
