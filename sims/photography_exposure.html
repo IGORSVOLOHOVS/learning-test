@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Фотография: лаборатория экспозиции</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 12px; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: #05060a; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .presets button {
+    flex: 1 1 auto; min-width: 120px; background: #232838; color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 8px; font-size: .82rem; cursor: pointer;
+  }
+  .presets button.active { border-color: var(--accent); background: rgba(91,140,255,0.15); }
+  .controls { margin-top: 14px; }
+  .control-row { margin-bottom: 14px; }
+  .control-row label { display: flex; justify-content: space-between; font-size: .88rem; margin-bottom: 6px; }
+  .control-row .val { color: var(--accent); font-weight: 600; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .stats { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .stat { flex: 1 1 auto; background: #171a24; border-radius: 10px; padding: 8px 12px; min-width: 110px; }
+  .stat .label { font-size: .72rem; color: var(--muted); }
+  .stat .value { font-size: 1.0rem; font-weight: 700; }
+  .explain { margin-top: 10px; font-size: .85rem; color: #c7cadb; line-height: 1.5; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .presets button, .stat { background: #f7f8fc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/photography_exposure.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Лаборатория: экспозиционный треугольник</h1>
+  <div class="subtitle">Сцена с машиной и фоном. Меняйте диафрагму, выдержку и ISO — смотрите на резкость фона, смаз движения, зерно и яркость кадра.</div>
+
+  <div class="card">
+    <canvas id="scene" width="640" height="320"></canvas>
+    <div class="stats">
+      <div class="stat"><div class="label">Экспозиция</div><div class="value" id="statExp">—</div></div>
+      <div class="stat"><div class="label">Глубина резкости</div><div class="value" id="statDof">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div class="card controls">
+    <div class="control-row">
+      <label>Диафрагма <span class="val" id="aVal">f/1.8</span></label>
+      <input type="range" id="aSlider" min="0" max="7" step="1" value="1">
+    </div>
+    <div class="control-row">
+      <label>Выдержка <span class="val" id="sVal">1/500 с</span></label>
+      <input type="range" id="sSlider" min="0" max="11" step="1" value="2">
+    </div>
+    <div class="control-row">
+      <label>ISO <span class="val" id="iVal">100</span></label>
+      <input type="range" id="iSlider" min="0" max="6" step="1" value="0">
+    </div>
+    <div class="explain" id="explainText"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById("scene");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+
+  const APERTURES = [1.4, 2, 2.8, 4, 5.6, 8, 11, 16];
+  const SHUTTERS = [1/2000, 1/1000, 1/500, 1/250, 1/125, 1/60, 1/30, 1/15, 1/8, 1/4, 1/2, 1];
+  const SHUTTER_LABELS = ["1/2000", "1/1000", "1/500", "1/250", "1/125", "1/60", "1/30", "1/15", "1/8", "1/4", "1/2", "1"];
+  const ISOS = [100, 200, 400, 800, 1600, 3200, 6400];
+
+  const aSlider = document.getElementById("aSlider");
+  const sSlider = document.getElementById("sSlider");
+  const iSlider = document.getElementById("iSlider");
+  const aVal = document.getElementById("aVal");
+  const sVal = document.getElementById("sVal");
+  const iVal = document.getElementById("iVal");
+  const statExp = document.getElementById("statExp");
+  const statDof = document.getElementById("statDof");
+  const explainText = document.getElementById("explainText");
+  const presetsEl = document.getElementById("presets");
+
+  let ambientLight = 1;
+  let carX = -60;
+  let frame = 0;
+
+  function getParams() {
+    return {
+      N: APERTURES[parseInt(aSlider.value, 10)],
+      t: SHUTTERS[parseInt(sSlider.value, 10)],
+      ISO: ISOS[parseInt(iSlider.value, 10)]
+    };
+  }
+
+  function updateLabels() {
+    aVal.textContent = "f/" + APERTURES[parseInt(aSlider.value, 10)];
+    sVal.textContent = SHUTTER_LABELS[parseInt(sSlider.value, 10)] + " с";
+    iVal.textContent = ISOS[parseInt(iSlider.value, 10)];
+  }
+
+  const REFERENCE = (1 * (1/125) * 100) / (5.6 * 5.6);
+
+  function computeExposure() {
+    const { N, t, ISO } = getParams();
+    const exposureValue = ambientLight * (t * ISO) / (N * N);
+    const ratio = exposureValue / REFERENCE;
+    const blurPx = Math.min(16, 18 / N);
+    return { ratio, blurPx, N, t, ISO };
+  }
+
+  function step() {
+    frame++;
+    carX += 2.6;
+    if (carX > W + 80) carX = -80;
+  }
+
+  function drawScene() {
+    const { ratio, blurPx, t } = computeExposure();
+    ctx.clearRect(0, 0, W, H);
+
+    // sky
+    const sky = ctx.createLinearGradient(0, 0, 0, H * 0.6);
+    if (ambientLight > 0.3) {
+      sky.addColorStop(0, "#3d6fb0");
+      sky.addColorStop(1, "#8fb8e0");
+    } else {
+      sky.addColorStop(0, "#050914");
+      sky.addColorStop(1, "#141c30");
+    }
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H * 0.62);
+
+    // ground
+    ctx.fillStyle = ambientLight > 0.3 ? "#3a6b3f" : "#0d1810";
+    ctx.fillRect(0, H * 0.62, W, H * 0.38);
+
+    // sun / moon + stars (blurred background layer)
+    ctx.save();
+    ctx.filter = `blur(${blurPx}px)`;
+    if (ambientLight > 0.3) {
+      ctx.beginPath();
+      ctx.arc(540, 60, 26, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffe9a8";
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(540, 55, 18, 0, Math.PI * 2);
+      ctx.fillStyle = "#d9e2f2";
+      ctx.fill();
+      for (let i = 0; i < 20; i++) {
+        const sx = (i * 53) % W;
+        const sy = (i * 37) % 140 + 10;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 1.3, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+      }
+    }
+    // background bokeh circles (trees / lights)
+    const bgSpots = [
+      { x: 60, y: 190, r: 26, c: ambientLight > 0.3 ? "#2f8f4a" : "#12331a" },
+      { x: 150, y: 175, r: 34, c: ambientLight > 0.3 ? "#347f42" : "#0f2814" },
+      { x: 400, y: 185, r: 22, c: ambientLight > 0.3 ? "#2f8f4a" : "#e0a23f" },
+      { x: 470, y: 170, r: 30, c: ambientLight > 0.3 ? "#347f42" : "#e0a23f" },
+      { x: 240, y: 195, r: 18, c: ambientLight > 0.3 ? "#2f8f4a" : "#e0a23f" }
+    ];
+    bgSpots.forEach(s => {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = s.c;
+      ctx.fill();
+    });
+    ctx.restore();
+
+    // road
+    ctx.fillStyle = "#22242c";
+    ctx.fillRect(0, H * 0.78, W, H * 0.22);
+
+    // car with motion trail (shutter blur)
+    const speedPxPerSec = 130;
+    const trailLen = Math.min(260, speedPxPerSec * t);
+    const steps = 10;
+    for (let i = steps; i >= 0; i--) {
+      const off = (i / steps) * trailLen;
+      const alpha = i === 0 ? 1 : (1 - i / (steps + 2)) * 0.5;
+      ctx.globalAlpha = alpha;
+      drawCar(carX - off, H * 0.83);
+    }
+    ctx.globalAlpha = 1;
+
+    // sharp foreground subject (person silhouette) - always in focus
+    ctx.beginPath();
+    ctx.arc(90, H * 0.72, 12, 0, Math.PI * 2);
+    ctx.fillStyle = "#1a1d29";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(70, H * 0.72 + 10);
+    ctx.lineTo(110, H * 0.72 + 10);
+    ctx.lineTo(100, H * 0.95);
+    ctx.lineTo(80, H * 0.95);
+    ctx.closePath();
+    ctx.fillStyle = "#1a1d29";
+    ctx.fill();
+
+    // exposure overlay
+    if (ratio < 1) {
+      ctx.fillStyle = `rgba(0,0,0,${Math.min(0.88, 1 - ratio)})`;
+      ctx.fillRect(0, 0, W, H);
+    } else if (ratio > 1) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(0.75, (ratio - 1) / 3)})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // ISO grain
+    const { ISO } = getParams();
+    const grainCount = Math.round((ISO / 6400) * 900);
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    for (let i = 0; i < grainCount; i++) {
+      const gx = Math.random() * W, gy = Math.random() * H;
+      ctx.globalAlpha = Math.random() * 0.5;
+      ctx.fillRect(gx, gy, 1.4, 1.4);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawCar(x, y) {
+    ctx.fillStyle = "#d1483a";
+    ctx.fillRect(x, y - 16, 50, 16);
+    ctx.beginPath();
+    ctx.moveTo(x + 8, y - 16);
+    ctx.lineTo(x + 16, y - 28);
+    ctx.lineTo(x + 36, y - 28);
+    ctx.lineTo(x + 42, y - 16);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#111319";
+    ctx.beginPath(); ctx.arc(x + 12, y, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 38, y, 6, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function updateStats() {
+    const { ratio } = computeExposure();
+    if (ratio < 0.4) statExp.textContent = "Сильно недоэкспонировано";
+    else if (ratio < 0.85) statExp.textContent = "Недоэкспонировано";
+    else if (ratio <= 1.3) statExp.textContent = "Нормальная экспозиция";
+    else if (ratio <= 3) statExp.textContent = "Переэкспонировано";
+    else statExp.textContent = "Сильно переэкспонировано";
+
+    const N = APERTURES[parseInt(aSlider.value, 10)];
+    if (N <= 2) statDof.textContent = "Очень малая (боке)";
+    else if (N <= 5.6) statDof.textContent = "Средняя";
+    else statDof.textContent = "Большая (всё резко)";
+  }
+
+  function loop() {
+    step();
+    drawScene();
+    updateStats();
+  }
+
+  const PRESETS = [
+    { name: "Портрет с размытым фоном", a: 0, s: 0, iso: 0, ambient: 1, explain: "Широко открытая диафрагма (f/1.4) даёт малую глубину резкости — фон превращается в мягкое боке; выдержка укорочена до 1/2000, чтобы кадр не был переэкспонирован. Объект на переднем плане резкий." },
+    { name: "Пейзаж, всё резко", a: 7, s: 7, iso: 0, ambient: 1, explain: "Закрытая диафрагма (f/16) — большая глубина резкости, резко и близко, и далеко. Пришлось удлинить выдержку до 1/15, чтобы компенсировать меньшее количество света." },
+    { name: "Заморозить движение", a: 3, s: 0, iso: 3, ambient: 1, explain: "Очень короткая выдержка (1/2000) полностью останавливает движение машины — следа смаза нет. Пришлось поднять ISO до 800, чтобы кадр остался правильно экспонирован." },
+    { name: "Смазанный ночной кадр", a: 2, s: 11, iso: 2, ambient: 0.0005, explain: "Очень тёмная сцена ночью — чтобы собрать достаточно света, нужна выдержка в целую секунду. Кадр экспонирован правильно, но длинная выдержка размывает движение машины в длинный след." },
+    { name: "Шумный ночной снимок", a: 2, s: 6, iso: 6, ambient: 0.00094, explain: "Высокое ISO (6400) позволяет использовать более короткую выдержку (1/30) в темноте и получить правильную экспозицию, но ценой сильной зернистости (шума) по всему кадру." }
+  ];
+
+  function applyPreset(p) {
+    aSlider.value = p.a;
+    sSlider.value = p.s;
+    iSlider.value = p.iso;
+    ambientLight = p.ambient;
+    updateLabels();
+    explainText.textContent = p.explain;
+    document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    const btn = document.querySelector('.presets button[data-name="' + p.name + '"]');
+    if (btn) btn.classList.add("active");
+  }
+
+  PRESETS.forEach(p => {
+    const btn = document.createElement("button");
+    btn.textContent = p.name;
+    btn.dataset.name = p.name;
+    btn.addEventListener("click", () => applyPreset(p));
+    presetsEl.appendChild(btn);
+  });
+
+  [aSlider, sSlider, iSlider].forEach(s => {
+    s.addEventListener("input", () => {
+      updateLabels();
+      document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    });
+  });
+
+  updateLabels();
+  applyPreset(PRESETS[0]);
+  setInterval(loop, 16);
+})();
+</script>
+</body>
+</html>

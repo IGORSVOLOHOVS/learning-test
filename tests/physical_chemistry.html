@@ -63,6 +63,7 @@
   .iconbtn {
     background: none; border: 1px solid var(--border); color: var(--muted);
     border-radius: 10px; padding: 8px 12px; font-size: .85rem; cursor: pointer;
+    text-decoration: none; display: inline-flex; align-items: center;
   }
   .result { text-align: center; padding: 20px 0; }
   .result .score { font-size: 3rem; font-weight: 700; color: var(--accent); }
@@ -99,7 +100,10 @@
   <header>
     <div class="topbar">
       <a class="back" href="../index.html">&larr; Все тесты</a>
-      <button class="iconbtn" id="syncBtn">☁️ Синхронизировать</button>
+      <div style="display:flex; gap:8px;">
+        <a class="iconbtn" href="../sims/physical_chemistry.html">🔬 Лаборатория</a>
+        <button class="iconbtn" id="syncBtn">☁️ Синхронизировать</button>
+      </div>
     </div>
     <h1>Физическая химия</h1>
     <div class="progressbar"><div id="progressFill" style="width:0%"></div></div>
