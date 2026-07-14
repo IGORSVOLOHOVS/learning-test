@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Diffusers: лаборатория диффузии</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 12px; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: #05060a; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .presets button {
+    flex: 1 1 auto; min-width: 120px; background: #232838; color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 8px; font-size: .82rem; cursor: pointer;
+  }
+  .presets button.active { border-color: var(--accent); background: rgba(91,140,255,0.15); }
+  .controls { margin-top: 14px; }
+  .control-row { margin-bottom: 14px; }
+  .control-row label { display: flex; justify-content: space-between; font-size: .88rem; margin-bottom: 6px; }
+  .control-row .val { color: var(--accent); font-weight: 600; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .stats { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .stat { flex: 1 1 auto; background: #171a24; border-radius: 10px; padding: 8px 12px; min-width: 130px; }
+  .stat .label { font-size: .72rem; color: var(--muted); }
+  .stat .value { font-size: 1.0rem; font-weight: 700; }
+  .explain { margin-top: 10px; font-size: .85rem; color: #c7cadb; line-height: 1.5; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .presets button, .stat { background: #f7f8fc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/diffusers.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Лаборатория: прямой и обратный процесс диффузии</h1>
+  <div class="subtitle">Точки образуют фигуру. Увеличивайте t, чтобы зашумить её, и число шагов денойзинга, чтобы попытаться восстановить.</div>
+
+  <div class="card">
+    <canvas id="scene" width="640" height="360"></canvas>
+    <div class="stats">
+      <div class="stat"><div class="label">Уровень шума (t)</div><div class="value" id="statT">—</div></div>
+      <div class="stat"><div class="label">Качество восстановления</div><div class="value" id="statQ">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div class="card controls">
+    <div class="control-row">
+      <label>Шаг диффузии t <span class="val" id="tVal">0</span></label>
+      <input type="range" id="tSlider" min="0" max="1000" step="10" value="0">
+    </div>
+    <div class="control-row">
+      <label>Число шагов денойзинга <span class="val" id="stepsVal">0</span></label>
+      <input type="range" id="stepsSlider" min="0" max="50" step="1" value="0">
+    </div>
+    <div class="explain" id="explainText"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById("scene");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const CX = W / 2, CY = H / 2 + 10;
+
+  const tSlider = document.getElementById("tSlider");
+  const stepsSlider = document.getElementById("stepsSlider");
+  const tVal = document.getElementById("tVal");
+  const stepsVal = document.getElementById("stepsVal");
+  const statT = document.getElementById("statT");
+  const statQ = document.getElementById("statQ");
+  const explainText = document.getElementById("explainText");
+  const presetsEl = document.getElementById("presets");
+
+  const NUM_POINTS = 220;
+  const points = [];
+  for (let i = 0; i < NUM_POINTS; i++) {
+    const t = (i / NUM_POINTS) * Math.PI * 2;
+    const hx = 16 * Math.pow(Math.sin(t), 3);
+    const hy = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+    points.push({
+      cx: CX + hx * 9, cy: CY + hy * 9,
+      nx: Math.random() * W, ny: Math.random() * H
+    });
+  }
+
+  function render() {
+    const t = parseFloat(tSlider.value);
+    const steps = parseFloat(stepsSlider.value);
+    const noiseFactor = t / 1000;
+    const quality = 1 - Math.exp(-steps / 15);
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#05060a";
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = "#ff9f43";
+    points.forEach(p => {
+      const noisedX = p.cx + (p.nx - p.cx) * noiseFactor;
+      const noisedY = p.cy + (p.ny - p.cy) * noiseFactor;
+      const fx = noisedX + (p.cx - noisedX) * quality;
+      const fy = noisedY + (p.cy - noisedY) * quality;
+      ctx.beginPath();
+      ctx.arc(fx, fy, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    statT.textContent = t.toFixed(0) + " / 1000";
+    statQ.textContent = (quality * 100).toFixed(0) + "%";
+  }
+
+  function updateLabels() {
+    tVal.textContent = tSlider.value;
+    stepsVal.textContent = stepsSlider.value;
+  }
+
+  const PRESETS = [
+    { name: "Чистые данные (t=0)", t: 0, steps: 0, explain: "t=0 — шум ещё не добавлен, фигура видна чётко." },
+    { name: "Частичный шум", t: 500, steps: 0, explain: "Половина пути прямого процесса — фигура едва угадывается сквозь шум." },
+    { name: "Полный шум", t: 1000, steps: 0, explain: "t=1000 — данные полностью превращены в случайный шум, фигуры не видно вообще." },
+    { name: "Быстрая генерация (мало шагов)", t: 1000, steps: 5, explain: "Генерация из чистого шума всего за 5 шагов денойзинга — фигура восстанавливается лишь грубо." },
+    { name: "Качественная генерация (много шагов)", t: 1000, steps: 40, explain: "Из того же шума, но за 40 шагов денойзинга — фигура восстанавливается чётко и плавно." }
+  ];
+
+  function applyPreset(p) {
+    tSlider.value = p.t;
+    stepsSlider.value = p.steps;
+    updateLabels();
+    explainText.textContent = p.explain;
+    render();
+    document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    const btn = document.querySelector('.presets button[data-name="' + p.name + '"]');
+    if (btn) btn.classList.add("active");
+  }
+
+  PRESETS.forEach(p => {
+    const btn = document.createElement("button");
+    btn.textContent = p.name;
+    btn.dataset.name = p.name;
+    btn.addEventListener("click", () => applyPreset(p));
+    presetsEl.appendChild(btn);
+  });
+
+  [tSlider, stepsSlider].forEach(s => {
+    s.addEventListener("input", () => {
+      updateLabels();
+      render();
+      document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    });
+  });
+
+  updateLabels();
+  applyPreset(PRESETS[0]);
+})();
+</script>
+</body>
+</html>

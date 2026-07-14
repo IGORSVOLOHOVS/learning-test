@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Вероятность: доска Гальтона</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 12px; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: #05060a; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .presets button {
+    flex: 1 1 auto; min-width: 120px; background: #232838; color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 8px; font-size: .82rem; cursor: pointer;
+  }
+  .presets button.active { border-color: var(--accent); background: rgba(91,140,255,0.15); }
+  .controls { margin-top: 14px; }
+  .control-row { margin-bottom: 14px; }
+  .control-row label { display: flex; justify-content: space-between; font-size: .88rem; margin-bottom: 6px; }
+  .control-row .val { color: var(--accent); font-weight: 600; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .stats { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .stat { flex: 1 1 auto; background: #171a24; border-radius: 10px; padding: 8px 12px; min-width: 110px; }
+  .stat .label { font-size: .72rem; color: var(--muted); }
+  .stat .value { font-size: 1.05rem; font-weight: 700; }
+  .reset-btn {
+    margin-top: 12px; width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--border);
+    background: #232838; color: var(--text); font-size: .9rem; cursor: pointer;
+  }
+  .explain { margin-top: 10px; font-size: .85rem; color: #c7cadb; line-height: 1.5; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .presets button, .stat, .reset-btn { background: #f7f8fc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/probability_statistics.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Лаборатория: доска Гальтона</h1>
+  <div class="subtitle">Шарики падают через колышки, на каждом отскакивая влево/вправо с вероятностью p, и накапливаются внизу — так на глазах строится биномиальное распределение.</div>
+
+  <div class="card">
+    <canvas id="scene" width="640" height="400"></canvas>
+    <div class="stats">
+      <div class="stat"><div class="label">Упало шариков</div><div class="value" id="statCount">0</div></div>
+      <div class="stat"><div class="label">Среднее число "вправо"</div><div class="value" id="statMean">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div class="card controls">
+    <div class="control-row">
+      <label>Вероятность "вправо" p <span class="val" id="pVal">0.5</span></label>
+      <input type="range" id="pSlider" min="0.05" max="0.95" step="0.05" value="0.5">
+    </div>
+    <div class="control-row">
+      <label>Число рядов колышков <span class="val" id="rowsVal">10</span></label>
+      <input type="range" id="rowsSlider" min="5" max="14" step="1" value="10">
+    </div>
+    <button class="reset-btn" id="restartBtn">Сбросить гистограмму</button>
+    <div class="explain" id="explainText"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById("scene");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+
+  const pSlider = document.getElementById("pSlider");
+  const rowsSlider = document.getElementById("rowsSlider");
+  const pVal = document.getElementById("pVal");
+  const rowsVal = document.getElementById("rowsVal");
+  const statCount = document.getElementById("statCount");
+  const statMean = document.getElementById("statMean");
+  const explainText = document.getElementById("explainText");
+  const presetsEl = document.getElementById("presets");
+
+  const PEG_TOP = 40, PEG_BOTTOM = 260, BIN_TOP = 275, BIN_BOTTOM = 390;
+
+  let balls = [];
+  let bins = [];
+  let totalLanded = 0;
+  let sumRights = 0;
+  let maxBalls = Infinity;
+  let frame = 0;
+
+  function numRows() { return parseInt(rowsSlider.value, 10); }
+  function pVal_() { return parseFloat(pSlider.value); }
+
+  function resetHistogram() {
+    balls = [];
+    bins = new Array(numRows() + 1).fill(0);
+    totalLanded = 0;
+    sumRights = 0;
+    frame = 0;
+  }
+
+  function pegX(row, k) {
+    const R = numRows();
+    const spacing = (W - 80) / R;
+    const centerX = W / 2;
+    return centerX + (k - row / 2) * spacing;
+  }
+  function pegY(row) {
+    const R = numRows();
+    return PEG_TOP + (row / R) * (PEG_BOTTOM - PEG_TOP);
+  }
+
+  function spawnBall() {
+    const R = numRows();
+    const path = [];
+    for (let i = 0; i < R; i++) path.push(Math.random() < pVal_() ? 1 : 0);
+    balls.push({ path, row: 0, k: 0, progress: 0, done: false });
+  }
+
+  function step() {
+    frame++;
+    if (frame % 8 === 0 && totalLanded + balls.length < maxBalls) {
+      spawnBall();
+    }
+    const speed = 0.09;
+    balls.forEach(b => {
+      if (b.row >= b.path.length) return;
+      b.progress += speed;
+      if (b.progress >= 1) {
+        b.progress = 0;
+        b.k += b.path[b.row];
+        b.row++;
+      }
+    });
+    const landed = balls.filter(b => b.row >= b.path.length);
+    landed.forEach(b => {
+      bins[b.k]++;
+      totalLanded++;
+      sumRights += b.k;
+    });
+    balls = balls.filter(b => b.row < b.path.length);
+  }
+
+  function ballPos(b) {
+    const R = numRows();
+    const x1 = pegX(b.row, b.k);
+    const y1 = pegY(b.row);
+    if (b.row >= R) return { x: x1, y: y1 };
+    const nextK = b.k + b.path[b.row];
+    const x2 = pegX(b.row + 1, nextK);
+    const y2 = pegY(b.row + 1);
+    return { x: x1 + (x2 - x1) * b.progress, y: y1 + (y2 - y1) * b.progress };
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#05060a";
+    ctx.fillRect(0, 0, W, H);
+
+    const R = numRows();
+    // pegs
+    ctx.fillStyle = "rgba(150,160,190,0.7)";
+    for (let row = 0; row <= R; row++) {
+      for (let k = 0; k <= row; k++) {
+        const x = pegX(row, k), y = pegY(row);
+        ctx.beginPath();
+        ctx.arc(x, y, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // bins as bars
+    const maxBin = Math.max(1, ...bins);
+    const binW = (W - 40) / bins.length;
+    const maxBarH = BIN_BOTTOM - BIN_TOP;
+    for (let i = 0; i < bins.length; i++) {
+      const h = (bins[i] / maxBin) * maxBarH;
+      const x = 20 + i * binW;
+      ctx.fillStyle = "#5b8cff";
+      ctx.fillRect(x + 2, BIN_BOTTOM - h, binW - 4, h);
+      ctx.strokeStyle = "rgba(150,160,190,0.3)";
+      ctx.strokeRect(20 + i * binW, BIN_TOP, binW, maxBarH);
+    }
+
+    // falling balls
+    ctx.fillStyle = "#ff9f43";
+    balls.forEach(b => {
+      const { x, y } = ballPos(b);
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    statCount.textContent = totalLanded;
+    statMean.textContent = totalLanded > 0 ? (sumRights / totalLanded).toFixed(2) + " / " + R : "—";
+  }
+
+  function loop() { step(); render(); }
+
+  function updateLabels() {
+    pVal.textContent = pSlider.value;
+    rowsVal.textContent = rowsSlider.value;
+  }
+
+  const PRESETS = [
+    { name: "Честная монета", p: 0.5, rows: 10, maxBalls: Infinity, explain: "p=0.5 — симметричное биномиальное распределение, похожее на колокол." },
+    { name: "Смещённая монета", p: 0.8, rows: 10, maxBalls: Infinity, explain: "p=0.8 — распределение сильно сдвинуто в сторону 'вправо'." },
+    { name: "Большая выборка (ЦПТ)", p: 0.5, rows: 14, maxBalls: Infinity, explain: "Много рядов и много шариков — гистограмма становится гладкой, приближаясь к нормальному распределению." },
+    { name: "Малая выборка", p: 0.5, rows: 10, maxBalls: 15, explain: "Всего 15 шариков — гистограмма рваная и нерегулярная. Малые выборки плохо отражают истинное распределение." },
+    { name: "Экстремальная асимметрия", p: 0.05, rows: 10, maxBalls: Infinity, explain: "p=0.05 — почти все шарики уходят влево, распределение сильно скошено." }
+  ];
+
+  function applyPreset(pr) {
+    pSlider.value = pr.p;
+    rowsSlider.value = pr.rows;
+    maxBalls = pr.maxBalls;
+    updateLabels();
+    explainText.textContent = pr.explain;
+    resetHistogram();
+    document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    const btn = document.querySelector('.presets button[data-name="' + pr.name + '"]');
+    if (btn) btn.classList.add("active");
+  }
+
+  PRESETS.forEach(pr => {
+    const btn = document.createElement("button");
+    btn.textContent = pr.name;
+    btn.dataset.name = pr.name;
+    btn.addEventListener("click", () => applyPreset(pr));
+    presetsEl.appendChild(btn);
+  });
+
+  [pSlider, rowsSlider].forEach(s => {
+    s.addEventListener("input", () => {
+      updateLabels();
+      maxBalls = Infinity;
+      resetHistogram();
+      document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    });
+  });
+  document.getElementById("restartBtn").addEventListener("click", resetHistogram);
+
+  updateLabels();
+  applyPreset(PRESETS[0]);
+  setInterval(loop, 16);
+})();
+</script>
+</body>
+</html>

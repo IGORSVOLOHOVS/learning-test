@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>World Models: лаборатория прогноза</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 12px; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: #05060a; }
+  .legend { font-size: .78rem; color: var(--muted); margin-top: 6px; }
+  .legend span.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .presets button {
+    flex: 1 1 auto; min-width: 120px; background: #232838; color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 8px; font-size: .82rem; cursor: pointer;
+  }
+  .presets button.active { border-color: var(--accent); background: rgba(91,140,255,0.15); }
+  .controls { margin-top: 14px; }
+  .control-row { margin-bottom: 14px; }
+  .control-row label { display: flex; justify-content: space-between; font-size: .88rem; margin-bottom: 6px; }
+  .control-row .val { color: var(--accent); font-weight: 600; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .stats { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .stat { flex: 1 1 auto; background: #171a24; border-radius: 10px; padding: 8px 12px; min-width: 130px; }
+  .stat .label { font-size: .72rem; color: var(--muted); }
+  .stat .value { font-size: 1.0rem; font-weight: 700; }
+  .explain { margin-top: 10px; font-size: .85rem; color: #c7cadb; line-height: 1.5; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .presets button, .stat { background: #f7f8fc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/world_models.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Лаборатория: world model и накопление ошибки</h1>
+  <div class="subtitle">Синий шарик — реальность. Полупрозрачный оранжевый — прогноз модели. Периодически прогноз 'сверяется' с реальностью и снова расходится.</div>
+
+  <div class="card">
+    <canvas id="scene" width="640" height="340"></canvas>
+    <div class="legend">
+      <span class="dot" style="background:#5b8cff"></span>реальность
+      <span class="dot" style="background:rgba(255,159,67,0.8)"></span>прогноз модели
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="label">Расхождение</div><div class="value" id="statDiv">—</div></div>
+      <div class="stat"><div class="label">Шагов с последней сверки</div><div class="value" id="statStep">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div class="card controls">
+    <div class="control-row">
+      <label>Уровень шума модели <span class="val" id="noiseVal">0.1</span></label>
+      <input type="range" id="noiseSlider" min="0" max="1" step="0.02" value="0.1">
+    </div>
+    <div class="control-row">
+      <label>Горизонт прогноза (шагов) <span class="val" id="horizonVal">60</span></label>
+      <input type="range" id="horizonSlider" min="5" max="200" step="5" value="60">
+    </div>
+    <div class="explain" id="explainText"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById("scene");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const BOX = { left: 60, right: 580, top: 30, bottom: 300 };
+
+  const noiseSlider = document.getElementById("noiseSlider");
+  const horizonSlider = document.getElementById("horizonSlider");
+  const noiseVal = document.getElementById("noiseVal");
+  const horizonVal = document.getElementById("horizonVal");
+  const statDiv = document.getElementById("statDiv");
+  const statStep = document.getElementById("statStep");
+  const explainText = document.getElementById("explainText");
+  const presetsEl = document.getElementById("presets");
+
+  let hallucinate = false;
+  let real, pred, stepCount, realTrail, predTrail;
+
+  function initBalls() {
+    real = { x: 320, y: 165, vx: 2.6, vy: 1.9 };
+    pred = { x: 320, y: 165, vx: 2.6, vy: 1.9 };
+    stepCount = 0;
+    realTrail = [];
+    predTrail = [];
+  }
+
+  function bounce(b) {
+    if (b.x < BOX.left) { b.x = BOX.left; b.vx = Math.abs(b.vx); }
+    if (b.x > BOX.right) { b.x = BOX.right; b.vx = -Math.abs(b.vx); }
+    if (b.y < BOX.top) { b.y = BOX.top; b.vy = Math.abs(b.vy); }
+    if (b.y > BOX.bottom) { b.y = BOX.bottom; b.vy = -Math.abs(b.vy); }
+  }
+
+  function step() {
+    const noise = parseFloat(noiseSlider.value);
+    const horizon = parseInt(horizonSlider.value, 10);
+
+    real.x += real.vx; real.y += real.vy;
+    bounce(real);
+
+    pred.vx += (Math.random() - 0.5) * noise * 0.6;
+    pred.vy += (Math.random() - 0.5) * noise * 0.6;
+    pred.x += pred.vx; pred.y += pred.vy;
+    if (!hallucinate) {
+      bounce(pred);
+    } else {
+      if (Math.random() < 0.3) bounce(pred);
+    }
+
+    realTrail.push({ x: real.x, y: real.y });
+    predTrail.push({ x: pred.x, y: pred.y });
+    if (realTrail.length > 40) realTrail.shift();
+    if (predTrail.length > 40) predTrail.shift();
+
+    stepCount++;
+    if (stepCount >= horizon) {
+      pred.x = real.x; pred.y = real.y; pred.vx = real.vx; pred.vy = real.vy;
+      stepCount = 0;
+      predTrail = [];
+    }
+  }
+
+  function drawTrail(trail, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    trail.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+    ctx.stroke();
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#05060a";
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.strokeStyle = "rgba(150,160,190,0.5)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(BOX.left, BOX.top, BOX.right - BOX.left, BOX.bottom - BOX.top);
+
+    drawTrail(realTrail, "rgba(91,140,255,0.4)");
+    drawTrail(predTrail, "rgba(255,159,67,0.4)");
+
+    ctx.beginPath();
+    ctx.arc(real.x, real.y, 9, 0, Math.PI * 2);
+    ctx.fillStyle = "#5b8cff";
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(pred.x, pred.y, 9, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,159,67,0.75)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,159,67,1)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    const div = Math.hypot(real.x - pred.x, real.y - pred.y);
+    statDiv.textContent = div.toFixed(0) + " px";
+    statStep.textContent = stepCount + " / " + horizonSlider.value;
+  }
+
+  function loop() { step(); render(); }
+
+  function updateLabels() {
+    noiseVal.textContent = parseFloat(noiseSlider.value).toFixed(2);
+    horizonVal.textContent = horizonSlider.value;
+  }
+
+  const PRESETS = [
+    { name: "Точная модель", noise: 0.03, horizon: 200, hallucinate: false, explain: "Очень низкий шум — прогноз почти не отличается от реальности даже на длинном горизонте." },
+    { name: "Шумная модель", noise: 0.8, horizon: 200, hallucinate: false, explain: "Высокий шум модели — прогноз быстро и заметно уплывает в сторону от реальной траектории." },
+    { name: "Короткий горизонт", noise: 0.4, horizon: 15, hallucinate: false, explain: "Тот же уровень шума, что и в 'длинном горизонте', но модель часто сверяется с реальностью — расхождение остаётся небольшим." },
+    { name: "Длинный горизонт (накопление ошибки)", noise: 0.4, horizon: 150, hallucinate: false, explain: "Тот же шум, что и в 'коротком горизонте', но сверка происходит редко — ошибка успевает накопиться и расхождение становится большим." },
+    { name: "Модель 'галлюцинирует'", noise: 0.9, horizon: 200, hallucinate: true, explain: "Модель периодически игнорирует стенки коробки — прогноз ведёт себя физически нереалистично, а не просто шумно." }
+  ];
+
+  function applyPreset(p) {
+    noiseSlider.value = p.noise;
+    horizonSlider.value = p.horizon;
+    hallucinate = p.hallucinate;
+    updateLabels();
+    explainText.textContent = p.explain;
+    initBalls();
+    document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    const btn = document.querySelector('.presets button[data-name="' + p.name + '"]');
+    if (btn) btn.classList.add("active");
+  }
+
+  PRESETS.forEach(p => {
+    const btn = document.createElement("button");
+    btn.textContent = p.name;
+    btn.dataset.name = p.name;
+    btn.addEventListener("click", () => applyPreset(p));
+    presetsEl.appendChild(btn);
+  });
+
+  [noiseSlider, horizonSlider].forEach(s => {
+    s.addEventListener("input", () => {
+      updateLabels();
+      document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    });
+  });
+
+  updateLabels();
+  applyPreset(PRESETS[0]);
+  setInterval(loop, 16);
+})();
+</script>
+</body>
+</html>

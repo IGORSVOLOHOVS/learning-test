@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Визуальная математика: градиентный спуск</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 12px; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: #05060a; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .presets button {
+    flex: 1 1 auto; min-width: 120px; background: #232838; color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 8px; font-size: .82rem; cursor: pointer;
+  }
+  .presets button.active { border-color: var(--accent); background: rgba(91,140,255,0.15); }
+  .controls { margin-top: 14px; }
+  .control-row { margin-bottom: 14px; }
+  .control-row label { display: flex; justify-content: space-between; font-size: .88rem; margin-bottom: 6px; }
+  .control-row .val { color: var(--accent); font-weight: 600; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .stats { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .stat { flex: 1 1 auto; background: #171a24; border-radius: 10px; padding: 8px 12px; min-width: 130px; }
+  .stat .label { font-size: .72rem; color: var(--muted); }
+  .stat .value { font-size: 1.0rem; font-weight: 700; }
+  .reset-btn {
+    margin-top: 12px; width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--border);
+    background: #232838; color: var(--text); font-size: .9rem; cursor: pointer;
+  }
+  .explain { margin-top: 10px; font-size: .85rem; color: #c7cadb; line-height: 1.5; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .presets button, .stat, .reset-btn { background: #f7f8fc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/visual_math.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Лаборатория: градиентный спуск</h1>
+  <div class="subtitle">Шарик катится по ландшафту функции потерь, следуя градиенту. Меняйте скорость обучения и наблюдайте за поведением.</div>
+
+  <div class="card">
+    <canvas id="scene" width="640" height="380"></canvas>
+    <div class="stats">
+      <div class="stat"><div class="label">Значение функции</div><div class="value" id="statF">—</div></div>
+      <div class="stat"><div class="label">Шагов сделано</div><div class="value" id="statSteps">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div class="card controls">
+    <div class="control-row">
+      <label>Скорость обучения (learning rate) <span class="val" id="lrVal">0.15</span></label>
+      <input type="range" id="lrSlider" min="0.01" max="1.2" step="0.01" value="0.15">
+    </div>
+    <button class="reset-btn" id="restartBtn">Перезапустить с начальной точки</button>
+    <div class="explain" id="explainText"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById("scene");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const CX = W / 2, CY = H / 2, SCALE = 70;
+
+  const lrSlider = document.getElementById("lrSlider");
+  const lrVal = document.getElementById("lrVal");
+  const statF = document.getElementById("statF");
+  const statSteps = document.getElementById("statSteps");
+  const explainText = document.getElementById("explainText");
+  const presetsEl = document.getElementById("presets");
+
+  const LANDSCAPES = {
+    bowl: {
+      f: (x, y) => x * x + y * y,
+      grad: (x, y) => [2 * x, 2 * y]
+    },
+    twovalley: {
+      f: (x, y) => 0.3 * x * x * x * x - 0.9 * x * x + 0.12 * x + 0.3 * y * y,
+      grad: (x, y) => [1.2 * x * x * x - 1.8 * x + 0.12, 0.6 * y]
+    },
+    saddle: {
+      f: (x, y) => x * x - y * y,
+      grad: (x, y) => [2 * x, -2 * y]
+    }
+  };
+
+  let landscapeKey = "bowl";
+  let ball = { x: 2.5, y: 2 };
+  let startPos = { x: 2.5, y: 2 };
+  let trail = [];
+  let steps = 0;
+
+  function toScreen(x, y) { return { x: CX + x * SCALE, y: CY - y * SCALE }; }
+
+  function landscape() { return LANDSCAPES[landscapeKey]; }
+
+  function reset() {
+    ball = { x: startPos.x, y: startPos.y };
+    trail = [{ x: ball.x, y: ball.y }];
+    steps = 0;
+  }
+
+  function step() {
+    const l = landscape();
+    const lr = parseFloat(lrSlider.value);
+    const [gx, gy] = l.grad(ball.x, ball.y);
+    ball.x -= lr * gx;
+    ball.y -= lr * gy;
+    ball.x = Math.max(-4.2, Math.min(4.2, ball.x));
+    ball.y = Math.max(-3, Math.min(3, ball.y));
+    trail.push({ x: ball.x, y: ball.y });
+    if (trail.length > 200) trail.shift();
+    steps++;
+  }
+
+  function colorFor(v, vmin, vmax) {
+    const t = Math.max(0, Math.min(1, (v - vmin) / (vmax - vmin + 1e-9)));
+    const r = Math.round(20 + t * 220);
+    const g = Math.round(20 + t * 180);
+    const b = Math.round(60 + (1 - t) * 140);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function render() {
+    const l = landscape();
+    ctx.clearRect(0, 0, W, H);
+
+    let vmin = Infinity, vmax = -Infinity;
+    const grid = [];
+    const cell = 10;
+    for (let py = 0; py < H; py += cell) {
+      for (let px = 0; px < W; px += cell) {
+        const x = (px - CX) / SCALE, y = (CY - py) / SCALE;
+        const v = l.f(x, y);
+        grid.push({ px, py, v });
+        if (v < vmin) vmin = v;
+        if (v > vmax) vmax = v;
+      }
+    }
+    grid.forEach(g => {
+      ctx.fillStyle = colorFor(g.v, vmin, vmax);
+      ctx.fillRect(g.px, g.py, cell, cell);
+    });
+
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    trail.forEach((p, i) => {
+      const s = toScreen(p.x, p.y);
+      if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
+    });
+    ctx.stroke();
+
+    const bp = toScreen(ball.x, ball.y);
+    ctx.beginPath();
+    ctx.arc(bp.x, bp.y, 8, 0, Math.PI * 2);
+    ctx.fillStyle = "#ff9f43";
+    ctx.fill();
+    ctx.strokeStyle = "#111319";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    statF.textContent = l.f(ball.x, ball.y).toFixed(3);
+    statSteps.textContent = steps;
+  }
+
+  function loop() { step(); render(); }
+
+  function updateLabel() { lrVal.textContent = parseFloat(lrSlider.value).toFixed(2); }
+
+  const PRESETS = [
+    { name: "Хорошая скорость обучения", landscape: "bowl", start: { x: 2.5, y: 2 }, lr: 0.15, explain: "Плавная, устойчивая сходимость к минимуму без колебаний." },
+    { name: "Слишком большой шаг", landscape: "bowl", start: { x: 1, y: 1 }, lr: 1.05, explain: "Шаг слишком велик — шарик перепрыгивает минимум и расходится, а не сходится." },
+    { name: "Слишком маленький шаг", landscape: "bowl", start: { x: 2.5, y: 2 }, lr: 0.02, explain: "Шаг слишком мал — шарик ползёт к минимуму крайне медленно." },
+    { name: "Застревание в локальном минимуме", landscape: "twovalley", start: { x: 1.6, y: 0.2 }, lr: 0.15, explain: "Шарик попадает в неглубокую ложбину рядом со стартом вместо более глубокого глобального минимума слева." },
+    { name: "Седловая точка", landscape: "saddle", start: { x: -2.2, y: 0.05 }, lr: 0.15, explain: "По оси X движение быстро стабилизируется (это направление минимума), а по оси Y шарик медленно, но неуклонно 'убегает' от седловой точки — эта неустойчивая раскачка и есть характерное поведение возле седла." }
+  ];
+
+  function applyPreset(p) {
+    landscapeKey = p.landscape;
+    startPos = { x: p.start.x, y: p.start.y };
+    lrSlider.value = p.lr;
+    updateLabel();
+    explainText.textContent = p.explain;
+    reset();
+    document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    const btn = document.querySelector('.presets button[data-name="' + p.name + '"]');
+    if (btn) btn.classList.add("active");
+  }
+
+  PRESETS.forEach(p => {
+    const btn = document.createElement("button");
+    btn.textContent = p.name;
+    btn.dataset.name = p.name;
+    btn.addEventListener("click", () => applyPreset(p));
+    presetsEl.appendChild(btn);
+  });
+
+  lrSlider.addEventListener("input", () => {
+    updateLabel();
+    document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+  });
+  document.getElementById("restartBtn").addEventListener("click", reset);
+
+  updateLabel();
+  applyPreset(PRESETS[0]);
+  setInterval(loop, 60);
+})();
+</script>
+</body>
+</html>

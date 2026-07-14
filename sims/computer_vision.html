@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Computer Vision: лаборатория свёртки</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 12px; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: #05060a; }
+  .canvas-labels { display: flex; justify-content: space-around; font-size: .78rem; color: var(--muted); margin-top: 6px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .presets button {
+    flex: 1 1 auto; min-width: 120px; background: #232838; color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 8px; font-size: .82rem; cursor: pointer;
+  }
+  .presets button.active { border-color: var(--accent); background: rgba(91,140,255,0.15); }
+  .kernel-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 240px; margin: 12px auto 0; }
+  .kernel-grid input {
+    width: 100%; padding: 10px 4px; text-align: center; border-radius: 8px; border: 1px solid var(--border);
+    background: #171a24; color: var(--text); font-size: .95rem;
+  }
+  .explain { margin-top: 10px; font-size: .85rem; color: #c7cadb; line-height: 1.5; text-align: center; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .presets button { background: #f7f8fc; }
+    .kernel-grid input { background: #f7f8fc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/computer_vision.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Лаборатория: свёртка изображения</h1>
+  <div class="subtitle">Ядро 3×3 скользит по изображению. Меняйте числа в ядре и смотрите, как меняется результат свёртки.</div>
+
+  <div class="card">
+    <canvas id="scene" width="640" height="300"></canvas>
+    <div class="canvas-labels"><span>исходное изображение</span><span>результат свёртки</span></div>
+  </div>
+
+  <div class="card">
+    <div class="presets" id="presets"></div>
+    <div class="kernel-grid" id="kernelGrid"></div>
+    <div class="explain" id="explainText"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById("scene");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const N = 16;
+  const PX = 17;
+  const LEFT_X = 30, RIGHT_X = 340, TOP_Y = 10;
+
+  const kernelGrid = document.getElementById("kernelGrid");
+  const explainText = document.getElementById("explainText");
+  const presetsEl = document.getElementById("presets");
+  const kernelInputs = [];
+
+  function buildImage() {
+    const img = [];
+    for (let y = 0; y < N; y++) {
+      const row = [];
+      for (let x = 0; x < N; x++) {
+        const inSquare = x >= 4 && x <= 11 && y >= 4 && y <= 11;
+        const inDiag = Math.abs((x - y)) <= 1 && x > 10;
+        row.push(inSquare || inDiag ? 210 : 25);
+      }
+      img.push(row);
+    }
+    return img;
+  }
+  const IMAGE = buildImage();
+
+  for (let i = 0; i < 9; i++) {
+    const inp = document.createElement("input");
+    inp.type = "number";
+    inp.step = "0.1";
+    inp.value = i === 4 ? "1" : "0";
+    inp.addEventListener("input", render);
+    kernelInputs.push(inp);
+    kernelGrid.appendChild(inp);
+  }
+
+  function getKernel() {
+    const k = [];
+    for (let r = 0; r < 3; r++) k.push([parseFloat(kernelInputs[r*3].value)||0, parseFloat(kernelInputs[r*3+1].value)||0, parseFloat(kernelInputs[r*3+2].value)||0]);
+    return k;
+  }
+
+  function convolve(img, k) {
+    const out = [];
+    for (let y = 0; y < N; y++) {
+      const row = [];
+      for (let x = 0; x < N; x++) {
+        let sum = 0;
+        for (let ky = -1; ky <= 1; ky++) {
+          for (let kx = -1; kx <= 1; kx++) {
+            const yy = y + ky, xx = x + kx;
+            const val = (yy >= 0 && yy < N && xx >= 0 && xx < N) ? img[yy][xx] : 0;
+            sum += val * k[ky + 1][kx + 1];
+          }
+        }
+        row.push(Math.max(0, Math.min(255, sum)));
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  function drawGrid(data, offsetX) {
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        const v = Math.round(data[y][x]);
+        ctx.fillStyle = `rgb(${v},${v},${v})`;
+        ctx.fillRect(offsetX + x * PX, TOP_Y + y * PX, PX - 1, PX - 1);
+      }
+    }
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#05060a";
+    ctx.fillRect(0, 0, W, H);
+    const k = getKernel();
+    const out = convolve(IMAGE, k);
+    drawGrid(IMAGE, LEFT_X);
+    drawGrid(out, RIGHT_X);
+  }
+
+  function setKernel(vals) {
+    vals.forEach((v, i) => kernelInputs[i].value = v);
+    render();
+  }
+
+  const PRESETS = [
+    { name: "Детектор вертикальных краёв", k: [-1,0,1,-2,0,2,-1,0,1], explain: "Ядро Собеля по X подсвечивает вертикальные границы объекта." },
+    { name: "Детектор горизонтальных краёв", k: [-1,-2,-1,0,0,0,1,2,1], explain: "Ядро Собеля по Y подсвечивает горизонтальные границы объекта." },
+    { name: "Размытие", k: [1/9,1/9,1/9,1/9,1/9,1/9,1/9,1/9,1/9], explain: "Усредняющее ядро размывает изображение, сглаживая резкие переходы." },
+    { name: "Повышение резкости", k: [0,-1,0,-1,5,-1,0,-1,0], explain: "Ядро sharpen усиливает контраст на границах, делая их более чёткими." },
+    { name: "Тождественное ядро", k: [0,0,0,0,1,0,0,0,0], explain: "Единица в центре и нули вокруг — результат в точности повторяет исходное изображение." }
+  ];
+
+  PRESETS.forEach(p => {
+    const btn = document.createElement("button");
+    btn.textContent = p.name;
+    btn.dataset.name = p.name;
+    btn.addEventListener("click", () => {
+      setKernel(p.k);
+      explainText.textContent = p.explain;
+      document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+    presetsEl.appendChild(btn);
+  });
+
+  presetsEl.firstChild && presetsEl.children[0].click();
+})();
+</script>
+</body>
+</html>

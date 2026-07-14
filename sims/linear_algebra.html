@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Линейная алгебра: лаборатория преобразований</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 12px; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: #05060a; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .presets button {
+    flex: 1 1 auto; min-width: 120px; background: #232838; color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 8px; font-size: .82rem; cursor: pointer;
+  }
+  .presets button.active { border-color: var(--accent); background: rgba(91,140,255,0.15); }
+  .controls { margin-top: 14px; }
+  .matrix-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .control-row label { display: flex; justify-content: space-between; font-size: .88rem; margin-bottom: 6px; }
+  .control-row .val { color: var(--accent); font-weight: 600; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .stats { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .stat { flex: 1 1 auto; background: #171a24; border-radius: 10px; padding: 8px 12px; min-width: 130px; }
+  .stat .label { font-size: .72rem; color: var(--muted); }
+  .stat .value { font-size: 1.0rem; font-weight: 700; }
+  .explain { margin-top: 10px; font-size: .85rem; color: #c7cadb; line-height: 1.5; }
+  .legend { font-size: .78rem; color: var(--muted); margin-top: 8px; }
+  .legend span.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .presets button, .stat { background: #f7f8fc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/linear_algebra.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Лаборатория: линейные преобразования</h1>
+  <div class="subtitle">Матрица 2×2 деформирует сетку и единичную окружность. Собственные векторы (если вещественные) показаны отдельным цветом.</div>
+
+  <div class="card">
+    <canvas id="scene" width="640" height="380"></canvas>
+    <div class="legend">
+      <span class="dot" style="background:#5b8cff"></span>деформированная сетка
+      <span class="dot" style="background:#2fbf71"></span>собственные векторы
+      <span class="dot" style="background:#ff9f43"></span>единичная окружность → эллипс
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="label">Определитель (площадь)</div><div class="value" id="statDet">—</div></div>
+      <div class="stat"><div class="label">Собственные значения</div><div class="value" id="statEig">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div class="card controls">
+    <div class="matrix-grid">
+      <div class="control-row"><label>a (M11) <span class="val" id="aVal">1.0</span></label><input type="range" id="aSlider" min="-3" max="3" step="0.1" value="1"></div>
+      <div class="control-row"><label>b (M12) <span class="val" id="bVal">0.0</span></label><input type="range" id="bSlider" min="-3" max="3" step="0.1" value="0"></div>
+      <div class="control-row"><label>c (M21) <span class="val" id="cVal">0.0</span></label><input type="range" id="cSlider" min="-3" max="3" step="0.1" value="0"></div>
+      <div class="control-row"><label>d (M22) <span class="val" id="dVal">1.0</span></label><input type="range" id="dSlider" min="-3" max="3" step="0.1" value="1"></div>
+    </div>
+    <div class="explain" id="explainText"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById("scene");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const CX = W / 2, CY = H / 2, SCALE = 55;
+
+  const aSlider = document.getElementById("aSlider");
+  const bSlider = document.getElementById("bSlider");
+  const cSlider = document.getElementById("cSlider");
+  const dSlider = document.getElementById("dSlider");
+  const aVal = document.getElementById("aVal");
+  const bVal = document.getElementById("bVal");
+  const cVal = document.getElementById("cVal");
+  const dVal = document.getElementById("dVal");
+  const statDet = document.getElementById("statDet");
+  const statEig = document.getElementById("statEig");
+  const explainText = document.getElementById("explainText");
+  const presetsEl = document.getElementById("presets");
+
+  function getMatrix() {
+    return {
+      a: parseFloat(aSlider.value), b: parseFloat(bSlider.value),
+      c: parseFloat(cSlider.value), d: parseFloat(dSlider.value)
+    };
+  }
+
+  function toScreen(x, y) { return { x: CX + x * SCALE, y: CY - y * SCALE }; }
+  function apply(m, x, y) { return { x: m.a * x + m.b * y, y: m.c * x + m.d * y }; }
+
+  function eigen(m) {
+    const T = m.a + m.d, D = m.a * m.d - m.b * m.c;
+    const disc = T * T - 4 * D;
+    if (disc < 0) return { real: false };
+    const sq = Math.sqrt(disc);
+    const l1 = (T + sq) / 2, l2 = (T - sq) / 2;
+    function vecFor(l) {
+      if (Math.abs(m.b) > 1e-6) return normalize(m.b, l - m.a);
+      if (Math.abs(m.c) > 1e-6) return normalize(l - m.d, m.c);
+      if (Math.abs(m.a - l) < 1e-6) return normalize(1, 0);
+      return normalize(0, 1);
+    }
+    function normalize(x, y) { const len = Math.hypot(x, y) || 1; return { x: x / len, y: y / len }; }
+    return { real: true, l1, l2, v1: vecFor(l1), v2: vecFor(l2) };
+  }
+
+  function render() {
+    const m = getMatrix();
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#05060a";
+    ctx.fillRect(0, 0, W, H);
+
+    // faint original grid
+    ctx.strokeStyle = "rgba(120,130,160,0.15)";
+    ctx.lineWidth = 1;
+    for (let i = -6; i <= 6; i++) {
+      ctx.beginPath();
+      let p1 = toScreen(i, -6), p2 = toScreen(i, 6);
+      ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+      p1 = toScreen(-6, i); p2 = toScreen(6, i);
+      ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    }
+
+    // shaded parallelogram (area = |det|)
+    const o = toScreen(0, 0);
+    const e1 = apply(m, 1, 0), e2 = apply(m, 0, 1);
+    const p1 = toScreen(e1.x, e1.y), p2 = toScreen(e1.x + e2.x, e1.y + e2.y), p3 = toScreen(e2.x, e2.y);
+    ctx.beginPath();
+    ctx.moveTo(o.x, o.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y); ctx.closePath();
+    const det = m.a * m.d - m.b * m.c;
+    ctx.fillStyle = det >= 0 ? "rgba(91,140,255,0.18)" : "rgba(239,83,80,0.18)";
+    ctx.fill();
+
+    // transformed grid
+    ctx.strokeStyle = "rgba(91,140,255,0.8)";
+    ctx.lineWidth = 1.4;
+    for (let i = -6; i <= 6; i++) {
+      ctx.beginPath();
+      for (let t = -6; t <= 6; t += 0.2) {
+        const pt = apply(m, i, t);
+        const s = toScreen(pt.x, pt.y);
+        if (t === -6) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
+      }
+      ctx.stroke();
+      ctx.beginPath();
+      for (let t = -6; t <= 6; t += 0.2) {
+        const pt = apply(m, t, i);
+        const s = toScreen(pt.x, pt.y);
+        if (t === -6) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
+      }
+      ctx.stroke();
+    }
+
+    // transformed unit circle -> ellipse
+    ctx.strokeStyle = "#ff9f43";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i <= 64; i++) {
+      const th = (i / 64) * Math.PI * 2;
+      const pt = apply(m, Math.cos(th), Math.sin(th));
+      const s = toScreen(pt.x, pt.y);
+      if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
+    }
+    ctx.stroke();
+
+    // eigenvectors
+    const eig = eigen(m);
+    if (eig.real) {
+      ctx.strokeStyle = "#2fbf71";
+      ctx.lineWidth = 2.5;
+      [eig.v1, eig.v2].forEach(v => {
+        const p1 = toScreen(-v.x * 6, -v.y * 6);
+        const p2 = toScreen(v.x * 6, v.y * 6);
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+      });
+    }
+
+    // origin marker
+    ctx.fillStyle = "#eef0f6";
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    statDet.textContent = det.toFixed(2) + (det < 0 ? " (отражение)" : "");
+    if (eig.real) {
+      statEig.textContent = "λ₁=" + eig.l1.toFixed(2) + ", λ₂=" + eig.l2.toFixed(2);
+    } else {
+      statEig.textContent = "комплексные (поворот)";
+    }
+  }
+
+  function updateLabels() {
+    aVal.textContent = parseFloat(aSlider.value).toFixed(1);
+    bVal.textContent = parseFloat(bSlider.value).toFixed(1);
+    cVal.textContent = parseFloat(cSlider.value).toFixed(1);
+    dVal.textContent = parseFloat(dSlider.value).toFixed(1);
+  }
+
+  const PRESETS = [
+    { name: "Тождественное преобразование", a: 1, b: 0, c: 0, d: 1, explain: "Единичная матрица — пространство не меняется." },
+    { name: "Поворот на 90°", a: 0, b: -1, c: 1, d: 0, explain: "Чистый поворот — собственные значения комплексные, вещественных собственных векторов нет." },
+    { name: "Растяжение по оси", a: 2, b: 0, c: 0, d: 1, explain: "Растяжение вдоль оси X в 2 раза — собственные векторы совпадают с осями координат." },
+    { name: "Вырожденное преобразование", a: 1, b: 1, c: 1, d: 1, explain: "Определитель равен нулю — вся плоскость 'схлопывается' в линию." },
+    { name: "Отражение", a: 1, b: 0, c: 0, d: -1, explain: "Отрицательный определитель — сетка зеркально переворачивается (меняется ориентация)." }
+  ];
+
+  function applyPreset(p) {
+    aSlider.value = p.a; bSlider.value = p.b; cSlider.value = p.c; dSlider.value = p.d;
+    updateLabels();
+    explainText.textContent = p.explain;
+    render();
+    document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    const btn = document.querySelector('.presets button[data-name="' + p.name + '"]');
+    if (btn) btn.classList.add("active");
+  }
+
+  PRESETS.forEach(p => {
+    const btn = document.createElement("button");
+    btn.textContent = p.name;
+    btn.dataset.name = p.name;
+    btn.addEventListener("click", () => applyPreset(p));
+    presetsEl.appendChild(btn);
+  });
+
+  [aSlider, bSlider, cSlider, dSlider].forEach(s => {
+    s.addEventListener("input", () => {
+      updateLabels();
+      render();
+      document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    });
+  });
+
+  updateLabels();
+  applyPreset(PRESETS[0]);
+})();
+</script>
+</body>
+</html>

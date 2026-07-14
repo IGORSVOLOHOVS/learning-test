@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NumPy: лаборатория broadcasting</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 12px; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: #05060a; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .presets button {
+    flex: 1 1 auto; min-width: 120px; background: #232838; color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 8px; font-size: .82rem; cursor: pointer;
+  }
+  .presets button.active { border-color: var(--accent); background: rgba(91,140,255,0.15); }
+  .controls { margin-top: 14px; }
+  .matrix-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .control-row label { display: flex; justify-content: space-between; font-size: .88rem; margin-bottom: 6px; }
+  .control-row .val { color: var(--accent); font-weight: 600; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .stats { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .stat { flex: 1 1 auto; background: #171a24; border-radius: 10px; padding: 8px 12px; min-width: 130px; }
+  .stat .label { font-size: .72rem; color: var(--muted); }
+  .stat .value { font-size: 1.0rem; font-weight: 700; }
+  .explain { margin-top: 10px; font-size: .85rem; color: #c7cadb; line-height: 1.5; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .presets button, .stat { background: #f7f8fc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/python_numpy_matplotlib.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Лаборатория: broadcasting и векторизация</h1>
+  <div class="subtitle">Меняйте формы массивов A и B — смотрите, как NumPy их совмещает (или почему не может). Ниже — сравнение скорости цикла и векторизации.</div>
+
+  <div class="card">
+    <canvas id="scene" width="640" height="420"></canvas>
+    <div class="stats">
+      <div class="stat"><div class="label">Форма A</div><div class="value" id="statA">—</div></div>
+      <div class="stat"><div class="label">Форма B</div><div class="value" id="statB">—</div></div>
+      <div class="stat"><div class="label">Результат</div><div class="value" id="statR">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div class="card controls">
+    <div class="matrix-grid">
+      <div class="control-row"><label>Строк A <span class="val" id="raVal">3</span></label><input type="range" id="raSlider" min="1" max="5" step="1" value="3"></div>
+      <div class="control-row"><label>Столбцов A <span class="val" id="caVal">1</span></label><input type="range" id="caSlider" min="1" max="5" step="1" value="1"></div>
+      <div class="control-row"><label>Строк B <span class="val" id="rbVal">1</span></label><input type="range" id="rbSlider" min="1" max="5" step="1" value="1"></div>
+      <div class="control-row"><label>Столбцов B <span class="val" id="cbVal">4</span></label><input type="range" id="cbSlider" min="1" max="5" step="1" value="4"></div>
+    </div>
+    <div class="control-row" style="margin-top:10px;">
+      <label>Число элементов для гонки (цикл vs векторизация) <span class="val" id="nVal">1000</span></label>
+      <input type="range" id="nSlider" min="0" max="4" step="1" value="1">
+    </div>
+    <div class="explain" id="explainText"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById("scene");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+
+  const raSlider = document.getElementById("raSlider"), caSlider = document.getElementById("caSlider");
+  const rbSlider = document.getElementById("rbSlider"), cbSlider = document.getElementById("cbSlider");
+  const raVal = document.getElementById("raVal"), caVal = document.getElementById("caVal");
+  const rbVal = document.getElementById("rbVal"), cbVal = document.getElementById("cbVal");
+  const nSlider = document.getElementById("nSlider");
+  const nVal = document.getElementById("nVal");
+  const statA = document.getElementById("statA"), statB = document.getElementById("statB"), statR = document.getElementById("statR");
+  const explainText = document.getElementById("explainText");
+  const presetsEl = document.getElementById("presets");
+
+  const N_VALUES = [100, 1000, 10000, 100000, 1000000];
+
+  function shapes() {
+    return { ra: +raSlider.value, ca: +caSlider.value, rb: +rbSlider.value, cb: +cbSlider.value };
+  }
+
+  function compatible(dimA, dimB) { return dimA === dimB || dimA === 1 || dimB === 1; }
+
+  function cellGrid(x0, y0, rows, cols, cellSize, valueFn, color) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = x0 + c * cellSize, y = y0 + r * cellSize;
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, cellSize - 3, cellSize - 3);
+        ctx.fillStyle = "#0b0d13";
+        ctx.font = "11px sans-serif";
+        ctx.fillText(String(valueFn(r, c)), x + 5, y + cellSize / 2 + 4);
+      }
+    }
+  }
+
+  function render() {
+    const { ra, ca, rb, cb } = shapes();
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#05060a";
+    ctx.fillRect(0, 0, W, H);
+
+    const rowsOk = compatible(ra, rb), colsOk = compatible(ca, cb);
+    const ok = rowsOk && colsOk;
+    const cellSize = 34;
+
+    ctx.fillStyle = "#eef0f6";
+    ctx.font = "13px sans-serif";
+    ctx.fillText("A (" + ra + "×" + ca + ")", 20, 20);
+    cellGrid(20, 30, ra, ca, cellSize, (r, c) => (r * ca + c + 1), "#5b8cff");
+
+    ctx.fillText("B (" + rb + "×" + cb + ")", 220, 20);
+    cellGrid(220, 30, rb, cb, cellSize, (r, c) => (r * cb + c + 1), "#ff9f43");
+
+    ctx.fillText(ok ? "Результат broadcasting" : "Ошибка: формы несовместимы", 20, 230);
+    if (ok) {
+      const rr = Math.max(ra, rb), rc = Math.max(ca, cb);
+      cellGrid(20, 240, rr, rc, cellSize, (r, c) => {
+        const ar = ra === 1 ? 0 : r, ac = ca === 1 ? 0 : c;
+        const br = rb === 1 ? 0 : r, bc = cb === 1 ? 0 : c;
+        return (ar * ca + ac + 1) + (br * cb + bc + 1);
+      }, "#2fbf71");
+      statR.textContent = rr + "×" + rc;
+    } else {
+      ctx.strokeStyle = "#ef5350";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(20, 250); ctx.lineTo(220, 340);
+      ctx.moveTo(220, 250); ctx.lineTo(20, 340);
+      ctx.stroke();
+      statR.textContent = "ошибка";
+    }
+
+    statA.textContent = ra + "×" + ca;
+    statB.textContent = rb + "×" + cb;
+
+    // race bars
+    const n = N_VALUES[+nSlider.value];
+    const loopTime = n * 55e-9;
+    const vecTime = n * 0.6e-9;
+    const maxLog = Math.log10(2000000 * 55e-9);
+    const loopBarW = Math.max(4, (Math.log10(loopTime * 1e9) / (Math.log10(2000000*55))) * 560);
+    const vecBarW = Math.max(4, (Math.log10(Math.max(vecTime*1e9,1)) / (Math.log10(2000000*55))) * 560);
+
+    ctx.fillStyle = "#eef0f6";
+    ctx.font = "13px sans-serif";
+    ctx.fillText("Цикл: " + formatTime(loopTime), 20, 375);
+    ctx.fillStyle = "#ef5350";
+    ctx.fillRect(20, 382, loopBarW, 14);
+
+    ctx.fillStyle = "#eef0f6";
+    ctx.fillText("Векторизация: " + formatTime(vecTime), 20, 408);
+    ctx.fillStyle = "#2fbf71";
+    ctx.fillRect(20, 400 + 8, vecBarW, 14);
+  }
+
+  function formatTime(s) {
+    if (s < 1e-3) return (s * 1e6).toFixed(1) + " мкс";
+    if (s < 1) return (s * 1e3).toFixed(2) + " мс";
+    return s.toFixed(2) + " с";
+  }
+
+  function updateLabels() {
+    raVal.textContent = raSlider.value;
+    caVal.textContent = caSlider.value;
+    rbVal.textContent = rbSlider.value;
+    cbVal.textContent = cbSlider.value;
+    nVal.textContent = N_VALUES[+nSlider.value].toLocaleString("ru-RU");
+  }
+
+  const PRESETS = [
+    { name: "Совместимые формы (3,1)+(1,4)", ra: 3, ca: 1, rb: 1, cb: 4, n: 1, explain: "Формы (3,1) и (1,4) совместимы — broadcasting даёт результат 3×4." },
+    { name: "Несовместимые формы", ra: 3, ca: 2, rb: 4, cb: 5, n: 1, explain: "Ни строки (3 и 4), ни столбцы (2 и 5) не совпадают и не равны 1 — broadcasting невозможен." },
+    { name: "Скаляр + массив", ra: 1, ca: 1, rb: 3, cb: 3, n: 1, explain: "Скаляр (1×1) совместим с любой формой — он растягивается на все ячейки массива B." },
+    { name: "Гонка на 1000 элементов", ra: 3, ca: 1, rb: 1, cb: 4, n: 1, explain: "При небольшом числе элементов разница в скорости заметна, но не драматична." },
+    { name: "Гонка на 1 000 000 элементов", ra: 3, ca: 1, rb: 1, cb: 4, n: 4, explain: "На миллионе элементов разница между циклом и векторизацией становится огромной." }
+  ];
+
+  function applyPreset(p) {
+    raSlider.value = p.ra; caSlider.value = p.ca; rbSlider.value = p.rb; cbSlider.value = p.cb; nSlider.value = p.n;
+    updateLabels();
+    explainText.textContent = p.explain;
+    render();
+    document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    const btn = document.querySelector('.presets button[data-name="' + p.name + '"]');
+    if (btn) btn.classList.add("active");
+  }
+
+  PRESETS.forEach(p => {
+    const btn = document.createElement("button");
+    btn.textContent = p.name;
+    btn.dataset.name = p.name;
+    btn.addEventListener("click", () => applyPreset(p));
+    presetsEl.appendChild(btn);
+  });
+
+  [raSlider, caSlider, rbSlider, cbSlider, nSlider].forEach(s => {
+    s.addEventListener("input", () => {
+      updateLabels();
+      render();
+      document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    });
+  });
+
+  updateLabels();
+  applyPreset(PRESETS[0]);
+})();
+</script>
+</body>
+</html>
