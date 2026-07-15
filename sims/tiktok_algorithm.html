@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>TikTok: симулятор автора</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-top: 12px; }
+  .reach-stat { display: flex; justify-content: space-between; align-items: center; background: #171a24; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; }
+  .reach-stat .label { font-size: .78rem; color: var(--muted); }
+  .reach-stat .value { font-size: 1.3rem; font-weight: 700; color: var(--accent); }
+  .progress { font-size: .8rem; color: var(--muted); margin-bottom: 8px; }
+  .prompt { font-size: 1rem; margin: 6px 0 14px; line-height: 1.5; }
+  .options { display: flex; flex-direction: column; gap: 10px; }
+  .opt {
+    display: block; width: 100%; text-align: left; background: #232838; color: var(--text);
+    border: 2px solid var(--border); border-radius: 12px; padding: 13px 16px; font-size: .92rem; cursor: pointer; line-height: 1.4;
+  }
+  .opt .delta { float: right; font-weight: 700; }
+  .opt.chosen { border-color: var(--accent); }
+  .opt.best { border-color: var(--good); background: rgba(47,191,113,0.12); }
+  .opt.disabled { pointer-events: none; opacity: .9; }
+  .explain { margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: #171a24; border-left: 3px solid var(--accent); font-size: .9rem; color: #c7cadb; display: none; line-height: 1.5; }
+  .explain.show { display: block; }
+  .nav { margin-top: 16px; }
+  button.btn { width: 100%; padding: 13px; border-radius: 12px; border: none; background: var(--accent); color: #fff; font-weight: 600; font-size: .95rem; cursor: pointer; }
+  button.btn:disabled { opacity: .4; pointer-events: none; }
+  .score { text-align: center; }
+  .score .big { font-size: 2.2rem; font-weight: 700; color: var(--accent); }
+  .restart-btn { margin-top: 14px; width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: #232838; color: var(--text); font-size: .9rem; cursor: pointer; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .opt, .restart-btn { background: #f7f8fc; }
+    .reach-stat, .explain { background: #f0f2fa; color: #3a3d4d; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/tiktok_algorithm.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Симулятор автора коротких видео</h1>
+  <div class="subtitle">5 раундов решений о видео. Каждый выбор меняет ваш охват — алгоритм реагирует на сигналы вовлечённости.</div>
+
+  <div class="card" id="caseCard">
+    <div class="reach-stat"><span class="label">Текущий охват (просмотров)</span><span class="value" id="reachVal">1000</span></div>
+    <div class="progress" id="progress"></div>
+    <div class="prompt" id="prompt"></div>
+    <div class="options" id="options"></div>
+    <div class="explain" id="explain"></div>
+    <div class="nav"><button class="btn" id="nextBtn" disabled>Далее</button></div>
+  </div>
+
+  <div class="card score" id="scoreCard" style="display:none;">
+    <div class="big" id="scoreBig"></div>
+    <div style="color:var(--muted); margin-top:6px;" id="scoreLabel">итоговый охват</div>
+    <div class="explain show" id="finalRating" style="margin-top:14px; text-align:left;"></div>
+    <button class="restart-btn" id="restartBtn">Начать заново</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  const caseCard = document.getElementById("caseCard");
+  const scoreCard = document.getElementById("scoreCard");
+  const progressEl = document.getElementById("progress");
+  const promptEl = document.getElementById("prompt");
+  const optionsEl = document.getElementById("options");
+  const explainEl = document.getElementById("explain");
+  const nextBtn = document.getElementById("nextBtn");
+  const scoreBig = document.getElementById("scoreBig");
+  const reachVal = document.getElementById("reachVal");
+  const finalRating = document.getElementById("finalRating");
+
+  const ROUNDS = [
+    {
+      prompt: "Вы публикуете новое видео. Какую обложку и заголовок выбрать?",
+      options: [
+        { label: "Кликбейт: 'Вы не поверите, что произошло!!!'", pct: 20, explain: "Кликбейт даёт всплеск кликов, но у зрителей срабатывает несоответствие ожиданий — completion rate проседает, что ограничивает дальнейшее продвижение." },
+        { label: "Честная, но яркая обложка, отражающая суть видео", pct: 40, explain: "Честная и привлекательная подача даёт хороший CTR без обмана ожиданий — высокий completion rate алгоритм вознаграждает дальнейшим продвижением." },
+        { label: "Минималистичная обложка без пояснений", pct: 5, explain: "Слишком мало информации о содержании — низкий CTR, алгоритм просто не успевает набрать сигнал для продвижения." }
+      ]
+    },
+    {
+      prompt: "Первые 3 секунды видео — самые важные. Что сделать?",
+      options: [
+        { label: "Сразу яркий хук: вопрос или интрига", pct: 50, explain: "Захватывающее начало резко снижает число ранних отказов — completion rate взлетает, и алгоритм агрессивно продвигает видео дальше." },
+        { label: "Долгое вступление: 'Привет, сегодня я расскажу...'", pct: -20, explain: "Классическая ошибка: зрители уходят в первые секунды, не дождавшись сути — сильный негативный сигнал для алгоритма." },
+        { label: "Драматическая пауза перед началом", pct: 10, explain: "Смешанный эффект: часть аудитории интригуется, часть — уходит, не дождавшись начала." }
+      ]
+    },
+    {
+      prompt: "Похожая тема уже была вирусной у конкурента. Как поступить?",
+      options: [
+        { label: "Скопировать формат один в один", pct: 5, explain: "Дублирующий контент воспринимается алгоритмом и зрителями как вторичный — органический охват низкий." },
+        { label: "Взять идею, но добавить свою уникальную подачу", pct: 35, explain: "Свежий, но релевантный контент на разогретую тему — одно из самых эффективных сочетаний для органического роста." },
+        { label: "Полностью проигнорировать тренд", pct: 8, explain: "Упущена возможность зацепиться за уже разогретый интерес аудитории к теме." }
+      ]
+    },
+    {
+      prompt: "Видео набирает много негативных комментариев из-за спорной темы. Реагировать?",
+      options: [
+        { label: "Удалить все негативные комментарии", pct: 5, explain: "Аудитория замечает 'зачистку' комментариев — доверие к каналу падает, а массового удаления сигнала вовлечённости алгоритм не оценит положительно." },
+        { label: "Спокойно и по существу ответить на конструктивную критику", pct: 30, explain: "Комментарии (даже спорные) — сильный сигнал вовлечённости, а ответы автора дополнительно продлевают обсуждение под видео." },
+        { label: "Полностью проигнорировать комментарии", pct: 15, explain: "Нейтральный вариант: сигнал вовлечённости от самих комментариев есть, но нет дополнительного буста от ответов автора." }
+      ]
+    },
+    {
+      prompt: "Вы хотите системно оптимизировать канал под алгоритм. На что сделать акцент?",
+      options: [
+        { label: "Только на лайках/репостах через провокационный контент", pct: 20, explain: "Краткосрочный буст за счёт эмоциональной провокации, но такой рост неустойчив и рискует сместить канал в сторону поляризующего контента." },
+        { label: "Баланс между completion rate и удовлетворённостью зрителя", pct: 35, explain: "Устойчивый, воспроизводимый рост без риска для долгосрочной репутации канала — оптимальная стратегия по совокупности сигналов." },
+        { label: "Полностью игнорировать любые метрики", pct: 5, explain: "Без учёта сигналов алгоритма органическое продвижение остаётся минимальным, независимо от качества контента." }
+      ]
+    }
+  ];
+
+  let idx = 0, reach = 1000, answered = false;
+
+  function showRound() {
+    const r = ROUNDS[idx];
+    answered = false;
+    progressEl.textContent = "Раунд " + (idx + 1) + " / " + ROUNDS.length;
+    promptEl.textContent = r.prompt;
+    explainEl.className = "explain";
+    nextBtn.disabled = true;
+    nextBtn.textContent = idx === ROUNDS.length - 1 ? "Завершить" : "Далее";
+    reachVal.textContent = Math.round(reach).toLocaleString("ru-RU");
+
+    optionsEl.innerHTML = "";
+    r.options.forEach((opt, i) => {
+      const btn = document.createElement("button");
+      btn.className = "opt";
+      btn.innerHTML = opt.label + '<span class="delta"></span>';
+      btn.addEventListener("click", () => selectOption(i));
+      optionsEl.appendChild(btn);
+    });
+  }
+
+  function selectOption(i) {
+    if (answered) return;
+    answered = true;
+    const r = ROUNDS[idx];
+    const bestIdx = r.options.reduce((best, o, j) => o.pct > r.options[best].pct ? j : best, 0);
+    const btns = optionsEl.querySelectorAll(".opt");
+    btns.forEach((b, j) => {
+      b.classList.add("disabled");
+      if (j === i) b.classList.add("chosen");
+      if (j === bestIdx) b.classList.add("best");
+      const d = b.querySelector(".delta");
+      d.textContent = (r.options[j].pct >= 0 ? "+" : "") + r.options[j].pct + "%";
+      d.style.color = r.options[j].pct >= 0 ? "var(--good)" : "var(--bad)";
+    });
+    reach = reach * (1 + r.options[i].pct / 100);
+    reachVal.textContent = Math.round(reach).toLocaleString("ru-RU");
+    explainEl.textContent = r.options[i].explain;
+    explainEl.classList.add("show");
+    nextBtn.disabled = false;
+  }
+
+  nextBtn.addEventListener("click", () => {
+    idx++;
+    if (idx >= ROUNDS.length) {
+      caseCard.style.display = "none";
+      scoreCard.style.display = "block";
+      const finalReach = Math.round(reach);
+      scoreBig.textContent = finalReach.toLocaleString("ru-RU");
+      let rating;
+      if (finalReach >= 3000) rating = "Уверенный рост: последовательные решения в пользу качества сигналов дали устойчивый органический охват.";
+      else if (finalReach >= 1500) rating = "Неплохой результат, но часть решений (кликбейт, игнор метрик) немного ограничила потенциальный охват.";
+      else rating = "Скромный результат: несколько решений отправили негативные сигналы алгоритму, ограничив дальнейшее продвижение.";
+      finalRating.textContent = rating;
+    } else {
+      showRound();
+    }
+  });
+
+  document.getElementById("restartBtn").addEventListener("click", () => {
+    idx = 0; reach = 1000;
+    caseCard.style.display = "block";
+    scoreCard.style.display = "none";
+    showRound();
+  });
+
+  showRound();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ISO: симулятор сертификации</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-top: 12px; }
+  .stage-label { font-size: .78rem; color: var(--accent); margin-bottom: 8px; }
+  .story-text { font-size: 1.02rem; line-height: 1.6; }
+  .options { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+  .opt {
+    display: block; width: 100%; text-align: left; background: #232838; color: var(--text);
+    border: 2px solid var(--border); border-radius: 12px; padding: 14px 16px; font-size: .95rem; cursor: pointer;
+  }
+  .opt:active { transform: scale(0.99); }
+  .ending-badge { text-align: center; font-size: 1.3rem; font-weight: 700; margin-bottom: 10px; }
+  .ending-badge.great { color: var(--good); }
+  .ending-badge.mixed { color: #e0c341; }
+  .ending-badge.poor { color: var(--bad); }
+  .explain { margin-top: 10px; padding: 12px 14px; border-radius: 10px; background: #171a24; border-left: 3px solid var(--accent); font-size: .9rem; color: #c7cadb; line-height: 1.5; }
+  .restart-btn { margin-top: 16px; width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: #232838; color: var(--text); font-size: .9rem; cursor: pointer; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .opt, .restart-btn { background: #f7f8fc; }
+    .explain { background: #f0f2fa; color: #3a3d4d; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/iso_standards.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Симулятор: подготовка к сертификации ISO</h1>
+  <div class="subtitle">Вы отвечаете за подготовку компании к сертификационному аудиту. Ваши решения определяют исход.</div>
+
+  <div class="card">
+    <div class="stage-label" id="stageLabel"></div>
+    <div id="content"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const stageLabel = document.getElementById("stageLabel");
+  const content = document.getElementById("content");
+
+  const NODES = {
+    start: {
+      stage: "Стадия 1 — решение о старте",
+      text: "Ваша ИТ-компания готовится участвовать в тендере, требующем сертификации ISO/IEC 27001. Текущие процессы информационной безопасности неформальны и не задокументированы.",
+      choices: [
+        { label: "Сразу записаться на сертификационный аудит", next: "rush" },
+        { label: "Сначала провести внутренний анализ рисков и задокументировать процессы", next: "prepare" }
+      ]
+    },
+    rush: {
+      stage: "Стадия 2 — результат внешнего аудита",
+      text: "Внешний аудитор быстро находит множество несоответствий: процессы не задокументированы, сотрудники не осведомлены о политиках безопасности. Сертификация не пройдена с первой попытки.",
+      choices: [
+        { label: "Устранить только то, что прямо указал аудитор, и попробовать снова", next: "rush_partial" },
+        { label: "Провести полноценный анализ рисков и построить систему менеджмента заново", next: "rush_full" }
+      ]
+    },
+    prepare: {
+      stage: "Стадия 2 — результат внутреннего аудита",
+      text: "Внутренний аудит заранее выявляет несколько несоответствий. Вы документируете процессы и устраняете часть проблем.",
+      choices: [
+        { label: "Инициировать сертификационный аудит только после устранения всех найденных несоответствий", next: "prepare_full" },
+        { label: "Инициировать сертификационный аудит сразу, оставив мелкие несоответствия на потом", next: "prepare_partial" }
+      ]
+    },
+    rush_partial: { ending: "poor", title: "Повторный провал аудита",
+      text: "Компания снова не проходит сертификацию.",
+      explain: "Точечное устранение отдельных замечаний без системного подхода не создаёт работающую систему менеджмента. ISO 27001 требует целостного риск-ориентированного мышления и цикла PDCA, а не разовых заплаток." },
+    rush_full: { ending: "mixed", title: "Сертификация пройдена, но с потерями",
+      text: "Полноценное построение системы менеджмента с нуля в итоге приводит к успешной сертификации.",
+      explain: "Результат положительный, но потеряно время и репутация перед заказчиком тендера — та же работа, сделанная до аудита, а не после провала, дала бы тот же результат быстрее и дешевле." },
+    prepare_full: { ending: "great", title: "Сертификация пройдена с первой попытки",
+      text: "Аудитор отмечает хорошо задокументированные процессы и полное соответствие требованиям.",
+      explain: "Последовательность 'внутренний аудит → устранение несоответствий → документация → внешний аудит' — стандартный и наиболее надёжный путь подготовки к сертификации." },
+    prepare_partial: { ending: "mixed", title: "Аудит отложен из-за мелких замечаний",
+      text: "Аудитор находит несколько небольших несоответствий, сертификацию откладывают на короткий срок для их устранения.",
+      explain: "Небольшая задержка, но в целом процесс проходит штатно — устранять несоответствия дешевле и быстрее до официального аудита, а не по его результатам." }
+  };
+
+  function render(nodeKey) {
+    const node = NODES[nodeKey];
+    if (node.ending) {
+      stageLabel.textContent = "Итог";
+      const badgeText = node.ending === "great" ? "Сертификация пройдена" : node.ending === "mixed" ? "Смешанный результат" : "Провал сертификации";
+      content.innerHTML =
+        '<div class="ending-badge ' + node.ending + '">' + badgeText + '</div>' +
+        '<div class="story-text">' + node.text + '</div>' +
+        '<div class="explain">' + node.explain + '</div>' +
+        '<button class="restart-btn" id="restartBtn">Начать заново</button>';
+      document.getElementById("restartBtn").addEventListener("click", () => render("start"));
+      return;
+    }
+    stageLabel.textContent = node.stage;
+    let html = '<div class="story-text">' + node.text + '</div><div class="options">';
+    node.choices.forEach(c => {
+      html += '<button class="opt" data-next="' + c.next + '">' + c.label + '</button>';
+    });
+    html += '</div>';
+    content.innerHTML = html;
+    content.querySelectorAll(".opt").forEach(btn => {
+      btn.addEventListener("click", () => render(btn.dataset.next));
+    });
+  }
+
+  render("start");
+})();
+</script>
+</body>
+</html>

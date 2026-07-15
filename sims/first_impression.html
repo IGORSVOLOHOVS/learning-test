@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Первое впечатление: интервью-квест</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-top: 12px; }
+  .stage-label { font-size: .78rem; color: var(--accent); margin-bottom: 8px; }
+  .story-text { font-size: 1.02rem; line-height: 1.6; }
+  .options { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+  .opt {
+    display: block; width: 100%; text-align: left; background: #232838; color: var(--text);
+    border: 2px solid var(--border); border-radius: 12px; padding: 14px 16px; font-size: .95rem; cursor: pointer;
+  }
+  .opt:active { transform: scale(0.99); }
+  .ending-badge { text-align: center; font-size: 1.3rem; font-weight: 700; margin-bottom: 10px; }
+  .ending-badge.great { color: var(--good); }
+  .ending-badge.mixed { color: #e0c341; }
+  .ending-badge.poor { color: var(--bad); }
+  .explain { margin-top: 10px; padding: 12px 14px; border-radius: 10px; background: #171a24; border-left: 3px solid var(--accent); font-size: .9rem; color: #c7cadb; line-height: 1.5; }
+  .restart-btn { margin-top: 16px; width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: #232838; color: var(--text); font-size: .9rem; cursor: pointer; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .opt, .restart-btn { background: #f7f8fc; }
+    .explain { background: #f0f2fa; color: #3a3d4d; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/first_impression.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Интервью-квест: первое впечатление</h1>
+  <div class="subtitle">Собеседование в реальном времени. Выбирайте, как себя вести — и смотрите, как это влияет на впечатление о вас.</div>
+
+  <div class="card">
+    <div class="stage-label" id="stageLabel"></div>
+    <div id="content"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const stageLabel = document.getElementById("stageLabel");
+  const content = document.getElementById("content");
+
+  const NODES = {
+    start: {
+      stage: "Стадия 1 — приветствие",
+      text: "Вы пришли на собеседование. Интервьюер выходит навстречу и протягивает руку.",
+      choices: [
+        { label: "Крепкое рукопожатие, лёгкая улыбка, зрительный контакт", next: "A" },
+        { label: "Быстрое, вялое рукопожатие, взгляд в пол", next: "B" },
+        { label: "Долгое рукопожатие, чрезмерно уверенный тон голоса", next: "C" }
+      ]
+    },
+    A: {
+      stage: "Стадия 2 — первые секунды разговора",
+      text: "Интервьюер тепло улыбается в ответ — заметны морщинки у глаз, похоже на искреннюю реакцию. Прежде чем перейти к делу, он между делом спрашивает, как вы добрались.",
+      choices: [
+        { label: "Коротко ответить и сразу предложить перейти к вопросам", next: "A1" },
+        { label: "Поддержать беседу непринуждённо, прежде чем перейти к делу", next: "A2" }
+      ]
+    },
+    B: {
+      stage: "Стадия 2 — первые секунды разговора",
+      text: "Интервьюер слегка удивлённо приподнимает бровь, но вежливо приглашает сесть и сразу переходит к формальным вопросам.",
+      choices: [
+        { label: "Сохранять сдержанность, отвечать по существу коротко", next: "B1" },
+        { label: "Сознательно выпрямиться, установить зрительный контакт и говорить увереннее", next: "B2" }
+      ]
+    },
+    C: {
+      stage: "Стадия 2 — первые секунды разговора",
+      text: "Интервьюер чуть отклоняется назад в кресле, взгляд становится настороженным.",
+      choices: [
+        { label: "Продолжать в том же уверенном, напористом тоне", next: "C1" },
+        { label: "Снизить темп речи, сделать паузу, перейти к активному слушанию вопросов", next: "C2" }
+      ]
+    },
+    A1: { ending: "mixed", title: "Хорошее, но не максимальное впечатление",
+      text: "Разговор перешёл к делу быстро и по существу.",
+      explain: "Первые секунды прошли отлично — конгруэнтные сигналы (рукопожатие, улыбка, взгляд) сработали как сильный эффект первичности. Но резкий переход к делу не дал взаимности (reciprocity) в small talk шанса дополнительно укрепить раппорт." },
+    A2: { ending: "great", title: "Отличное впечатление",
+      text: "Лёгкая беседа прошла непринуждённо, атмосфера стала более расслабленной.",
+      explain: "Конгруэнтные невербальные сигналы с первых секунд (эффект первичности сыграл в вашу пользу) плюс небольшая взаимная открытость в small talk — классический путь к быстрому раппорту через принцип взаимности." },
+    B1: { ending: "poor", title: "Слабое впечатление",
+      text: "Беседа так и осталась сухой и формальной до конца.",
+      explain: "Слабое рукопожатие и взгляд в пол уже задали не лучшее первое впечатление (эффект первичности и последующее 'якорение'), а сдержанность в продолжении не дала возможности его пересмотреть." },
+    B2: { ending: "mixed", title: "Впечатление удалось частично исправить",
+      text: "Осознанная смена позы и взгляда постепенно изменила атмосферу разговора.",
+      explain: "Первое впечатление (эффект первичности) было не идеальным, но осознанная коррекция невербального поведения в реальном времени помогла отчасти пересмотреть первоначальное 'якорение' интервьюера." },
+    C1: { ending: "poor", title: "Впечатление ухудшилось",
+      text: "Интервьюер держался всё более отстранённо до конца встречи.",
+      explain: "Избыточная демонстрация уверенности за пределами разумного часто считывается как давление или высокомерие, а не компетентность — продолжение в том же напористом тоне усилило настороженность." },
+    C2: { ending: "great", title: "Впечатление удалось стабилизировать",
+      text: "Интервьюер заметно расслабился, разговор стал более естественным.",
+      explain: "Снижение темпа и переход к активному слушанию — эффективный способ скорректировать излишне напористое первое впечатление и восстановить ощущение баланса в разговоре." }
+  };
+
+  function render(nodeKey) {
+    const node = NODES[nodeKey];
+    if (node.ending) {
+      stageLabel.textContent = "Итог";
+      const badgeClass = node.ending;
+      const badgeText = node.ending === "great" ? "Отличное впечатление" : node.ending === "mixed" ? "Смешанное впечатление" : "Слабое впечатление";
+      content.innerHTML =
+        '<div class="ending-badge ' + badgeClass + '">' + badgeText + '</div>' +
+        '<div class="story-text">' + node.text + '</div>' +
+        '<div class="explain">' + node.explain + '</div>' +
+        '<button class="restart-btn" id="restartBtn">Начать заново</button>';
+      document.getElementById("restartBtn").addEventListener("click", () => render("start"));
+      return;
+    }
+    stageLabel.textContent = node.stage;
+    let html = '<div class="story-text">' + node.text + '</div><div class="options">';
+    node.choices.forEach((c, i) => {
+      html += '<button class="opt" data-next="' + c.next + '">' + c.label + '</button>';
+    });
+    html += '</div>';
+    content.innerHTML = html;
+    content.querySelectorAll(".opt").forEach(btn => {
+      btn.addEventListener("click", () => render(btn.dataset.next));
+    });
+  }
+
+  render("start");
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Эмоции: детектив мимики</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-top: 12px; }
+  canvas { display: block; margin: 0 auto; background: #05060a; border-radius: 10px; }
+  .progress { font-size: .8rem; color: var(--muted); margin-bottom: 8px; }
+  .case-text { font-size: 1rem; margin: 10px 0; line-height: 1.5; text-align: center; }
+  .options { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .opt {
+    display: block; width: 100%; text-align: left; background: #232838; color: var(--text);
+    border: 2px solid var(--border); border-radius: 12px; padding: 13px 16px; font-size: .95rem; cursor: pointer;
+  }
+  .opt.correct { border-color: var(--good); background: rgba(47,191,113,0.15); }
+  .opt.wrong { border-color: var(--bad); background: rgba(239,83,80,0.15); }
+  .opt.disabled { pointer-events: none; opacity: .85; }
+  .explain { margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: #171a24; border-left: 3px solid var(--accent); font-size: .9rem; color: #c7cadb; display: none; }
+  .explain.show { display: block; }
+  .nav { margin-top: 16px; }
+  button.btn { width: 100%; padding: 13px; border-radius: 12px; border: none; background: var(--accent); color: #fff; font-weight: 600; font-size: .95rem; cursor: pointer; }
+  button.btn:disabled { opacity: .4; pointer-events: none; }
+  .score { text-align: center; }
+  .score .big { font-size: 2.6rem; font-weight: 700; color: var(--accent); }
+  .restart-btn { margin-top: 14px; width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: #232838; color: var(--text); font-size: .9rem; cursor: pointer; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .opt { background: #f7f8fc; }
+    .explain { background: #f0f2fa; color: #3a3d4d; }
+    .restart-btn { background: #f7f8fc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/facial_emotion_recognition.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Детектив мимики</h1>
+  <div class="subtitle">6 кейсов на распознавание выражений лица. Выбирайте ответ и сразу смотрите разбор.</div>
+
+  <div class="card" id="caseCard">
+    <div class="progress" id="progress"></div>
+    <canvas id="faceCanvas" width="220" height="220" style="display:none;"></canvas>
+    <div class="case-text" id="caseText"></div>
+    <div class="options" id="options"></div>
+    <div class="explain" id="explain"></div>
+    <div class="nav"><button class="btn" id="nextBtn" disabled>Далее</button></div>
+  </div>
+
+  <div class="card score" id="scoreCard" style="display:none;">
+    <div class="big" id="scoreBig"></div>
+    <div style="color:var(--muted); margin-top:6px;">правильных разборов из 6</div>
+    <button class="restart-btn" id="restartBtn">Пройти заново</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById("faceCanvas");
+  const ctx = canvas.getContext("2d");
+  const caseCard = document.getElementById("caseCard");
+  const scoreCard = document.getElementById("scoreCard");
+  const progressEl = document.getElementById("progress");
+  const caseTextEl = document.getElementById("caseText");
+  const optionsEl = document.getElementById("options");
+  const explainEl = document.getElementById("explain");
+  const nextBtn = document.getElementById("nextBtn");
+  const scoreBig = document.getElementById("scoreBig");
+
+  function drawFace(p) {
+    const cx = 110, cy = 110;
+    ctx.clearRect(0, 0, 220, 220);
+    ctx.fillStyle = "#05060a";
+    ctx.fillRect(0, 0, 220, 220);
+    ctx.strokeStyle = "#e0c9a6";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 80, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ["left", "right"].forEach((side, i) => {
+      const dir = i === 0 ? -1 : 1;
+      const ex = cx + dir * 32;
+      const ey = cy - 15;
+      ctx.strokeStyle = "#e0c9a6";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      const browTilt = p.browAngle * dir;
+      ctx.moveTo(ex - 16, ey - 22 - p.browHeight + browTilt * 6);
+      ctx.lineTo(ex + 16, ey - 22 - p.browHeight - browTilt * 6);
+      ctx.stroke();
+
+      ctx.beginPath();
+      if (p.eyeSquint > 0.5) {
+        ctx.strokeStyle = "#e0c9a6";
+        ctx.lineWidth = 2.5;
+        ctx.moveTo(ex - 12, ey);
+        ctx.quadraticCurveTo(ex, ey - 6 + p.eyeSquint * 4, ex + 12, ey);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = "#e0c9a6";
+        ctx.ellipse(ex, ey, 11, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+
+    ctx.strokeStyle = "#e0785a";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    const asym = p.mouthAsymmetry || 0;
+    ctx.moveTo(cx - 28, cy + 35);
+    ctx.quadraticCurveTo(cx, cy + 35 + p.mouthCurve * 26, cx + 28, cy + 35 + asym * 22);
+    ctx.stroke();
+  }
+
+  const CASES = [
+    {
+      type: "face", face: { browAngle: 0, browHeight: 0, eyeSquint: 0.9, mouthCurve: 1 },
+      text: "Оцените выражение лица: искренняя это улыбка или вежливая?",
+      options: ["Искренняя (улыбка Дюшена)", "Вежливая (участвует только рот)"],
+      correct: 0,
+      explain: "Верно: глаза тоже 'улыбаются' (сокращена круговая мышца глаза) — это классический признак искренней радости, улыбка Дюшена."
+    },
+    {
+      type: "face", face: { browAngle: 0, browHeight: 0, eyeSquint: 0, mouthCurve: 1 },
+      text: "А это выражение — искреннее или вежливое?",
+      options: ["Искренняя (улыбка Дюшена)", "Вежливая (участвует только рот)"],
+      correct: 1,
+      explain: "Верно: рот улыбается, но глаза остались полностью открытыми, не задействованы — типичный признак формальной, вежливой улыбки."
+    },
+    {
+      type: "flash", face: { browAngle: 0.6, browHeight: 4, eyeSquint: 0.3, mouthCurve: 0.2, mouthAsymmetry: -0.9 },
+      text: "Внимание! Лицо мелькнёт на экране на короткое время. Постарайтесь заметить эмоцию.",
+      options: ["Радость", "Презрение / пренебрежение", "Удивление", "Ничего не успел(а) заметить"],
+      correct: 1,
+      explain: "Это было микровыражение презрения — асимметричное поднятие одного уголка рта (смирк). Микровыражения длятся доли секунды и их легко пропустить — в этом их суть."
+    },
+    {
+      type: "face", face: { browAngle: -0.8, browHeight: -3, eyeSquint: 0.2, mouthCurve: 0.9 },
+      text: "Рот улыбается, но брови напряжены и сведены. Что вероятнее?",
+      options: ["Искренняя радость", "Скрываемый дискомфорт / натянутая улыбка"],
+      correct: 1,
+      explain: "Конфликтующая комбинация признаков (улыбка рта + напряжённые, сведённые брови) часто выдаёт скрываемый дискомфорт, а не подлинную радость."
+    },
+    {
+      type: "narrative",
+      text: "Собеседник из другой культуры с улыбкой рассказывает о серьёзной неудаче на работе. Как это лучше интерпретировать?",
+      options: ["Он на самом деле рад этой неудаче", "Это может быть культурная норма — маскировать негативную эмоцию улыбкой (display rule)", "Он наверняка лжёт о неудаче"],
+      correct: 1,
+      explain: "Культурные 'правила отображения' (display rules) в некоторых культурах предписывают маскировать негативные эмоции улыбкой — не стоит делать поспешный вывод об истинных чувствах человека."
+    },
+    {
+      type: "narrative",
+      text: "Система автоматического распознавания эмоций показывает заметно более низкую точность для одной из демографических групп. Что делать?",
+      options: ["Ничего — это неизбежное свойство таких систем", "Проверить репрезентативность обучающих данных и провести аудит точности по подгруппам", "Немедленно и навсегда отключить любые подобные системы"],
+      correct: 1,
+      explain: "Разница в точности между группами чаще всего объясняется недостаточно репрезентативными обучающими данными — ответственный подход начинается с аудита данных и метрик по подгруппам."
+    }
+  ];
+
+  let idx = 0, score = 0, answered = false;
+
+  function showCase() {
+    const c = CASES[idx];
+    answered = false;
+    progressEl.textContent = "Кейс " + (idx + 1) + " / " + CASES.length;
+    caseTextEl.textContent = c.text;
+    explainEl.className = "explain";
+    nextBtn.disabled = true;
+    nextBtn.textContent = idx === CASES.length - 1 ? "Завершить" : "Далее";
+
+    if (c.type === "face" || c.type === "flash") {
+      canvas.style.display = "block";
+      drawFace(c.face);
+      if (c.type === "flash") {
+        canvas.style.visibility = "hidden";
+        caseTextEl.textContent = c.text;
+        setTimeout(() => {
+          canvas.style.visibility = "visible";
+          setTimeout(() => { canvas.style.visibility = "hidden"; }, 280);
+        }, 900);
+      } else {
+        canvas.style.visibility = "visible";
+      }
+    } else {
+      canvas.style.display = "none";
+    }
+
+    optionsEl.innerHTML = "";
+    c.options.forEach((opt, i) => {
+      const btn = document.createElement("button");
+      btn.className = "opt";
+      btn.textContent = opt;
+      btn.addEventListener("click", () => selectOption(i));
+      optionsEl.appendChild(btn);
+    });
+  }
+
+  function selectOption(i) {
+    if (answered) return;
+    answered = true;
+    const c = CASES[idx];
+    const btns = optionsEl.querySelectorAll(".opt");
+    btns.forEach((b, j) => {
+      b.classList.add("disabled");
+      if (j === c.correct) b.classList.add("correct");
+      else if (j === i) b.classList.add("wrong");
+    });
+    if (i === c.correct) score++;
+    explainEl.textContent = c.explain;
+    explainEl.classList.add("show");
+    nextBtn.disabled = false;
+    canvas.style.visibility = "visible";
+  }
+
+  nextBtn.addEventListener("click", () => {
+    idx++;
+    if (idx >= CASES.length) {
+      caseCard.style.display = "none";
+      scoreCard.style.display = "block";
+      scoreBig.textContent = score + " / " + CASES.length;
+    } else {
+      showCase();
+    }
+  });
+
+  document.getElementById("restartBtn").addEventListener("click", () => {
+    idx = 0; score = 0;
+    caseCard.style.display = "block";
+    scoreCard.style.display = "none";
+    showCase();
+  });
+
+  showCase();
+})();
+</script>
+</body>
+</html>
