@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Оптимизация: визуализатор профиля</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 12px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .presets button {
+    flex: 1 1 auto; min-width: 120px; background: #232838; color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 8px; font-size: .82rem; cursor: pointer;
+  }
+  .presets button.active { border-color: var(--accent); background: rgba(91,140,255,0.15); }
+  .stats { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .stat { flex: 1 1 auto; background: #171a24; border-radius: 10px; padding: 8px 12px; min-width: 130px; }
+  .stat .label { font-size: .72rem; color: var(--muted); }
+  .stat .value { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
+  .func-row { margin-bottom: 12px; }
+  .func-head { display: flex; justify-content: space-between; align-items: center; font-size: .88rem; margin-bottom: 5px; }
+  .func-head .fname { font-weight: 600; }
+  .func-head .fname.hot::before { content: "🔥 "; }
+  .func-head .ftime { color: var(--muted); }
+  .bar-track { background: #171a24; border-radius: 8px; height: 22px; overflow: hidden; display: flex; align-items: center; }
+  .bar-fill { height: 100%; background: var(--accent); border-radius: 8px; transition: width .3s; }
+  .bar-fill.hot { background: var(--bad); }
+  .opt-btn { margin-top: 6px; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: #232838; color: var(--text); font-size: .8rem; cursor: pointer; }
+  .reset-btn { margin-top: 10px; width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: #232838; color: var(--text); font-size: .9rem; cursor: pointer; }
+  .explain { margin-top: 10px; font-size: .85rem; color: #c7cadb; line-height: 1.5; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .presets button, .stat, .opt-btn, .reset-btn { background: #f7f8fc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/performance_optimization.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Визуализатор профиля производительности</h1>
+  <div class="subtitle">Каждая функция — полоска времени выполнения. Оптимизируйте самую 'горячую' и смотрите, как меняется общее время.</div>
+
+  <div class="card">
+    <div class="presets" id="presets"></div>
+    <div class="stats">
+      <div class="stat"><div class="label">Общее время</div><div class="value" id="statTotal">—</div></div>
+      <div class="stat"><div class="label">Ускорение</div><div class="value" id="statSpeedup">—</div></div>
+    </div>
+    <div id="funcList"></div>
+    <button class="reset-btn" id="resetBtn">Сбросить профиль</button>
+    <div class="explain" id="explainText"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const funcListEl = document.getElementById("funcList");
+  const statTotal = document.getElementById("statTotal");
+  const statSpeedup = document.getElementById("statSpeedup");
+  const explainText = document.getElementById("explainText");
+  const presetsEl = document.getElementById("presets");
+
+  const PRESETS = {
+    typical: {
+      name: "Типичный профиль",
+      funcs: [ { name: "computeHeavy()", time: 120 }, { name: "renderUI()", time: 40 }, { name: "networkCall()", time: 20 }, { name: "parseInput()", time: 15 }, { name: "main()", time: 5 } ],
+      explain: "Одна функция явно доминирует — по принципу Парето, оптимизация именно её даст наибольший эффект на общее время."
+    },
+    hotspot: {
+      name: "Один явный хотспот",
+      funcs: [ { name: "computeHeavy()", time: 180 }, { name: "renderUI()", time: 8 }, { name: "networkCall()", time: 6 }, { name: "parseInput()", time: 4 }, { name: "main()", time: 2 } ],
+      explain: "computeHeavy() занимает почти всё время — даже небольшое её ускорение резко сократит общее время выполнения программы."
+    },
+    uniform: {
+      name: "Равномерная нагрузка",
+      funcs: [ { name: "computeHeavy()", time: 42 }, { name: "renderUI()", time: 40 }, { name: "networkCall()", time: 38 }, { name: "parseInput()", time: 40 }, { name: "main()", time: 40 } ],
+      explain: "Нет явного узкого места — по закону Амдала оптимизация только одной функции здесь даст лишь ограниченный общий эффект, нужно оптимизировать несколько сразу."
+    }
+  };
+
+  let funcs = [];
+  let originalTotal = 0;
+
+  function total() { return funcs.reduce((s, f) => s + f.time, 0); }
+
+  function render() {
+    const t = total();
+    const sorted = [...funcs].sort((a, b) => b.time - a.time);
+    const hotName = sorted[0] ? sorted[0].name : null;
+
+    funcListEl.innerHTML = "";
+    funcs.forEach((f, i) => {
+      const isHot = f.name === hotName && t > 0;
+      const pct = t > 0 ? (f.time / t) * 100 : 0;
+      const row = document.createElement("div");
+      row.className = "func-row";
+      row.innerHTML =
+        '<div class="func-head"><span class="fname' + (isHot ? " hot" : "") + '">' + f.name + '</span><span class="ftime">' + f.time.toFixed(1) + ' мс</span></div>' +
+        '<div class="bar-track"><div class="bar-fill' + (isHot ? " hot" : "") + '" style="width:' + pct + '%"></div></div>' +
+        '<button class="opt-btn" data-i="' + i + '">Оптимизировать</button>';
+      funcListEl.appendChild(row);
+    });
+
+    funcListEl.querySelectorAll(".opt-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const i = parseInt(btn.dataset.i, 10);
+        funcs[i].time = funcs[i].time * 0.5;
+        render();
+      });
+    });
+
+    statTotal.textContent = t.toFixed(1) + " мс";
+    statSpeedup.textContent = originalTotal > 0 ? (originalTotal / t).toFixed(2) + "×" : "—";
+  }
+
+  function applyPreset(key) {
+    const p = PRESETS[key];
+    funcs = p.funcs.map(f => ({ name: f.name, time: f.time }));
+    originalTotal = total();
+    explainText.textContent = p.explain;
+    render();
+    document.querySelectorAll(".presets button").forEach(b => b.classList.toggle("active", b.dataset.key === key));
+  }
+
+  Object.keys(PRESETS).forEach(key => {
+    const btn = document.createElement("button");
+    btn.textContent = PRESETS[key].name;
+    btn.dataset.key = key;
+    btn.addEventListener("click", () => applyPreset(key));
+    presetsEl.appendChild(btn);
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    const activeKey = document.querySelector(".presets button.active").dataset.key;
+    applyPreset(activeKey);
+  });
+
+  applyPreset("typical");
+})();
+</script>
+</body>
+</html>

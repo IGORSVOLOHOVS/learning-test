@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Сетевые драйверы: кольцевой буфер</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 12px; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: #05060a; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .presets button {
+    flex: 1 1 auto; min-width: 120px; background: #232838; color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 8px; font-size: .82rem; cursor: pointer;
+  }
+  .presets button.active { border-color: var(--accent); background: rgba(91,140,255,0.15); }
+  .controls { margin-top: 14px; }
+  .control-row { margin-bottom: 14px; }
+  .control-row label { display: flex; justify-content: space-between; font-size: .88rem; margin-bottom: 6px; }
+  .control-row .val { color: var(--accent); font-weight: 600; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .mode-toggle { display: flex; gap: 8px; margin-bottom: 14px; }
+  .mode-toggle button { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border); background: #171a24; color: var(--text); cursor: pointer; font-size: .88rem; }
+  .mode-toggle button.active { border-color: var(--accent); background: rgba(91,140,255,0.2); color: var(--accent); font-weight: 600; }
+  .stats { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .stat { flex: 1 1 auto; background: #171a24; border-radius: 10px; padding: 8px 12px; min-width: 110px; }
+  .stat .label { font-size: .72rem; color: var(--muted); }
+  .stat .value { font-size: 1.05rem; font-weight: 700; }
+  .step-row { display: flex; gap: 10px; margin-top: 12px; }
+  .step-row button { flex: 1; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: #232838; color: var(--text); font-size: .9rem; cursor: pointer; }
+  .step-row button.primary { background: var(--accent); color: #fff; border: none; font-weight: 600; }
+  .explain { margin-top: 10px; font-size: .85rem; color: #c7cadb; line-height: 1.5; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .presets button, .stat, .mode-toggle button, .step-row button { background: #f7f8fc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/network_drivers.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Визуализатор: кольцевой буфер сетевой карты</h1>
+  <div class="subtitle">Пакеты поступают в буфер и обрабатываются драйвером. Если нагрузка выше пропускной способности — буфер переполняется, и пакеты теряются.</div>
+
+  <div class="card">
+    <canvas id="scene" width="640" height="220"></canvas>
+    <div class="stats">
+      <div class="stat"><div class="label">Заполнение буфера</div><div class="value" id="statFill">0 / 16</div></div>
+      <div class="stat"><div class="label">Обработано за тик</div><div class="value" id="statProc">—</div></div>
+      <div class="stat"><div class="label">Отброшено всего</div><div class="value" id="statDrop">0</div></div>
+    </div>
+    <div class="step-row">
+      <button class="primary" id="tickBtn">Тик ▸</button>
+      <button id="autoBtn">▶️ Автовоспроизведение</button>
+      <button id="resetBtn">Сброс</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div class="card controls">
+    <div class="mode-toggle" id="modeToggle">
+      <button data-mode="interrupt">Режим: Прерывания</button>
+      <button data-mode="napi">Режим: NAPI (батчинг)</button>
+    </div>
+    <div class="control-row">
+      <label>Скорость поступления пакетов (за тик) <span class="val" id="rateVal">5</span></label>
+      <input type="range" id="rateSlider" min="1" max="25" step="1" value="5">
+    </div>
+    <div class="explain" id="explainText"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById("scene");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const BUFFER_SIZE = 16;
+
+  const rateSlider = document.getElementById("rateSlider");
+  const rateVal = document.getElementById("rateVal");
+  const statFill = document.getElementById("statFill");
+  const statProc = document.getElementById("statProc");
+  const statDrop = document.getElementById("statDrop");
+  const explainText = document.getElementById("explainText");
+  const presetsEl = document.getElementById("presets");
+  const modeToggle = document.getElementById("modeToggle");
+
+  let mode = "interrupt";
+  let fill = 0;
+  let totalDropped = 0;
+  let lastProcessed = 0;
+  let lastDropFlash = 0;
+  let autoTimer = null;
+
+  function effectiveCapacity(rate) {
+    if (mode === "interrupt") {
+      const overhead = Math.min(0.8, rate / 25);
+      return 10 * (1 - overhead);
+    } else {
+      return Math.min(20, 10 + rate * 0.5);
+    }
+  }
+
+  function tick() {
+    const rate = parseFloat(rateSlider.value);
+    const spaceLeft = BUFFER_SIZE - fill;
+    const accepted = Math.min(rate, spaceLeft);
+    const dropped = rate - accepted;
+    fill += accepted;
+    totalDropped += dropped;
+    if (dropped > 0) lastDropFlash = 8;
+
+    const capacity = effectiveCapacity(rate);
+    const processed = Math.min(fill, capacity);
+    fill -= processed;
+    lastProcessed = processed;
+
+    render();
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#05060a";
+    ctx.fillRect(0, 0, W, H);
+
+    const slotW = (W - 40) / BUFFER_SIZE;
+    for (let i = 0; i < BUFFER_SIZE; i++) {
+      const x = 20 + i * slotW;
+      const filled = i < Math.round(fill);
+      ctx.fillStyle = filled ? "#5b8cff" : "#1a1d29";
+      ctx.strokeStyle = "rgba(150,160,190,0.4)";
+      ctx.lineWidth = 1;
+      ctx.fillRect(x + 2, 60, slotW - 4, 100);
+      ctx.strokeRect(x + 2, 60, slotW - 4, 100);
+    }
+
+    ctx.fillStyle = "#eef0f6";
+    ctx.font = "13px sans-serif";
+    ctx.fillText("Кольцевой буфер (" + Math.round(fill) + " / " + BUFFER_SIZE + ")", 20, 45);
+
+    if (lastDropFlash > 0) {
+      ctx.fillStyle = "rgba(239,83,80," + (lastDropFlash / 8) + ")";
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 16px sans-serif";
+      ctx.fillText("ПАКЕТЫ ОТБРОШЕНЫ", W / 2 - 80, H / 2 + 40);
+      lastDropFlash--;
+    }
+
+    ctx.fillStyle = "#8b8fa3";
+    ctx.font = "12px sans-serif";
+    ctx.fillText("Пропускная способность (" + (mode === "interrupt" ? "прерывания" : "NAPI") + "): ~" + effectiveCapacity(parseFloat(rateSlider.value)).toFixed(1) + " пакетов/тик", 20, 195);
+
+    statFill.textContent = Math.round(fill) + " / " + BUFFER_SIZE;
+    statProc.textContent = lastProcessed.toFixed(1);
+    statDrop.textContent = Math.round(totalDropped);
+  }
+
+  function reset() {
+    fill = 0; totalDropped = 0; lastProcessed = 0; lastDropFlash = 0;
+    render();
+  }
+
+  function setMode(m) {
+    mode = m;
+    modeToggle.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.mode === m));
+    render();
+  }
+
+  document.getElementById("tickBtn").addEventListener("click", tick);
+  document.getElementById("resetBtn").addEventListener("click", reset);
+  document.getElementById("autoBtn").addEventListener("click", function () {
+    if (autoTimer) {
+      clearInterval(autoTimer);
+      autoTimer = null;
+      this.textContent = "▶️ Автовоспроизведение";
+    } else {
+      autoTimer = setInterval(tick, 350);
+      this.textContent = "⏸ Остановить";
+    }
+  });
+  modeToggle.querySelectorAll("button").forEach(b => {
+    b.addEventListener("click", () => setMode(b.dataset.mode));
+  });
+  rateSlider.addEventListener("input", () => {
+    rateVal.textContent = rateSlider.value;
+    render();
+    document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+  });
+
+  const PRESETS = [
+    { name: "Низкая нагрузка", rate: 5, mode: "interrupt", explain: "Нагрузка ниже пропускной способности в любом режиме — буфер стабилен, потерь пакетов нет." },
+    { name: "Перегрузка без NAPI", rate: 20, mode: "interrupt", explain: "При высокой частоте прерываний накладные расходы на каждое прерывание резко снижают эффективную пропускную способность ('interrupt storm') — буфер быстро переполняется." },
+    { name: "Перегрузка с NAPI", rate: 20, mode: "napi", explain: "NAPI объединяет обработку в пакеты (батчи), и пропускная способность растёт вместе с нагрузкой — та же нагрузка обрабатывается почти без потерь." },
+    { name: "Шторм прерываний", rate: 25, mode: "interrupt", explain: "Экстремальная нагрузка в режиме прерываний — пропускная способность падает почти до минимума, буфер переполняется практически сразу." }
+  ];
+
+  function applyPreset(p) {
+    rateSlider.value = p.rate;
+    rateVal.textContent = p.rate;
+    setMode(p.mode);
+    explainText.textContent = p.explain;
+    reset();
+    document.querySelectorAll(".presets button").forEach(b => b.classList.remove("active"));
+    const btn = document.querySelector('.presets button[data-name="' + p.name + '"]');
+    if (btn) btn.classList.add("active");
+  }
+
+  PRESETS.forEach(p => {
+    const btn = document.createElement("button");
+    btn.textContent = p.name;
+    btn.dataset.name = p.name;
+    btn.addEventListener("click", () => applyPreset(p));
+    presetsEl.appendChild(btn);
+  });
+
+  setMode("interrupt");
+  applyPreset(PRESETS[0]);
+})();
+</script>
+</body>
+</html>

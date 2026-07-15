@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>C++: визуализатор стека и кучи</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 12px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .presets button {
+    flex: 1 1 auto; min-width: 120px; background: #232838; color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 8px; font-size: .82rem; cursor: pointer;
+  }
+  .presets button.active { border-color: var(--accent); background: rgba(91,140,255,0.15); }
+  .code {
+    background: #05060a; border-radius: 10px; padding: 12px 14px; font-family: "Consolas", monospace;
+    font-size: .85rem; line-height: 1.7; white-space: pre; overflow-x: auto;
+  }
+  .code .line { padding: 1px 6px; border-radius: 4px; color: #9aa2b8; }
+  .code .line.current { background: rgba(91,140,255,0.25); color: #eef0f6; }
+  .mem-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .mem-col h3 { font-size: .8rem; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+  .mem-box {
+    border: 2px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; font-size: .85rem;
+    background: #171a24;
+  }
+  .mem-box.freed { border-color: var(--bad); background: rgba(239,83,80,0.12); text-decoration: line-through; opacity: .7; }
+  .mem-box.leaked { border-color: #e0c341; background: rgba(224,195,65,0.12); }
+  .mem-box.new { border-color: var(--good); }
+  .warning { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(239,83,80,0.15); border-left: 3px solid var(--bad); font-size: .88rem; color: #f3c9c8; display: none; }
+  .warning.show { display: block; }
+  .note { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #171a24; border-left: 3px solid var(--accent); font-size: .88rem; color: #c7cadb; }
+  .nav { display: flex; gap: 10px; margin-top: 14px; }
+  .nav button { flex: 1; padding: 12px; border-radius: 12px; border: none; background: var(--accent); color: #fff; font-weight: 600; font-size: .92rem; cursor: pointer; }
+  .nav button.secondary { background: #232838; color: var(--text); border: 1px solid var(--border); }
+  .nav button:disabled { opacity: .4; pointer-events: none; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
+    .presets button, .nav button.secondary { background: #f7f8fc; }
+    .code { background: #eef0f6; }
+    .code .line { color: #5a5f70; }
+    .mem-box { background: #f0f2fa; }
+    .note { background: #f0f2fa; color: #3a3d4d; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/low_level_cpp.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+  <h1>Визуализатор: стек и куча в C++</h1>
+  <div class="subtitle">Выполняйте код по шагам и смотрите, что происходит в памяти — на стеке и в куче.</div>
+
+  <div class="card">
+    <div class="presets" id="presets"></div>
+    <div class="code" id="codeView"></div>
+    <div class="mem-cols">
+      <div class="mem-col"><h3>Стек</h3><div id="stackView"></div></div>
+      <div class="mem-col"><h3>Куча</h3><div id="heapView"></div></div>
+    </div>
+    <div class="warning" id="warningBox"></div>
+    <div class="note" id="noteBox"></div>
+    <div class="nav">
+      <button class="secondary" id="resetBtn">Сначала</button>
+      <button id="nextBtn">Следующая строка ▸</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const codeView = document.getElementById("codeView");
+  const stackView = document.getElementById("stackView");
+  const heapView = document.getElementById("heapView");
+  const warningBox = document.getElementById("warningBox");
+  const noteBox = document.getElementById("noteBox");
+  const nextBtn = document.getElementById("nextBtn");
+  const presetsEl = document.getElementById("presets");
+
+  const SCRIPTS = {
+    safe: {
+      name: "unique_ptr (безопасно)",
+      lines: [
+        "void foo() {",
+        "    std::unique_ptr<int> p(new int(42));",
+        "    std::cout << *p;",
+        "} // p выходит из области видимости"
+      ],
+      steps: [
+        { line: 0, stack: [], heap: [], note: "Начало функции. Память ещё не выделена." },
+        { line: 1, stack: [{ name: "p", desc: "unique_ptr → куча #1" }], heap: [{ id: 1, val: "42", cls: "new" }], note: "unique_ptr выделил int в куче и стал его единственным владельцем." },
+        { line: 2, stack: [{ name: "p", desc: "unique_ptr → куча #1" }], heap: [{ id: 1, val: "42" }], note: "Чтение значения через указатель — память не меняется." },
+        { line: 3, stack: [], heap: [], note: "p вышел из области видимости — деструктор unique_ptr автоматически освободил память в куче (RAII). Утечки нет." }
+      ]
+    },
+    leak: {
+      name: "Утечка памяти",
+      lines: [
+        "void foo() {",
+        "    int* p = new int(42);",
+        "    std::cout << *p;",
+        "} // область видимости закончилась, delete не вызван!"
+      ],
+      steps: [
+        { line: 0, stack: [], heap: [], note: "Начало функции." },
+        { line: 1, stack: [{ name: "p", desc: "int* → куча #1" }], heap: [{ id: 1, val: "42", cls: "new" }], note: "Сырой указатель p вручную выделил память в куче." },
+        { line: 2, stack: [{ name: "p", desc: "int* → куча #1" }], heap: [{ id: 1, val: "42" }], note: "Чтение значения — память не меняется." },
+        { line: 3, stack: [], heap: [{ id: 1, val: "42", cls: "leaked" }], note: "p (единственный указатель на эту память) уничтожен вместе со стеком функции, но delete не был вызван.", warning: "Утечка памяти: блок в куче остался занят навсегда — на него больше нет ни одного указателя, освободить его уже невозможно." }
+      ]
+    },
+    dangling: {
+      name: "Висячий указатель",
+      lines: [
+        "int* p = new int(42);",
+        "delete p;",
+        "std::cout << *p; // ОШИБКА",
+        "p = nullptr; // теперь безопасно"
+      ],
+      steps: [
+        { line: 0, stack: [{ name: "p", desc: "int* → куча #1" }], heap: [{ id: 1, val: "42", cls: "new" }], note: "Указатель p выделил память в куче." },
+        { line: 1, stack: [{ name: "p", desc: "int* → куча #1 (освобождено!)" }], heap: [{ id: 1, val: "42", cls: "freed" }], note: "Память освобождена, но p всё ещё хранит старый адрес — p стал висячим указателем (dangling pointer)." },
+        { line: 2, stack: [{ name: "p", desc: "int* → куча #1 (освобождено!)" }], heap: [{ id: 1, val: "42", cls: "freed" }], note: "Обращение по висячему указателю.", warning: "Use-after-free: обращение к уже освобождённой памяти — неопределённое поведение. Программа может упасть или вернуть случайные данные." },
+        { line: 3, stack: [{ name: "p", desc: "nullptr" }], heap: [], note: "Явное обнуление указателя после освобождения — хорошая практика, устраняющая риск случайного use-after-free." }
+      ]
+    }
+  };
+
+  let currentScript = null;
+  let stepIdx = 0;
+
+  function renderCode() {
+    codeView.innerHTML = currentScript.lines.map((l, i) =>
+      '<div class="line' + (i === currentScript.steps[stepIdx].line ? ' current' : '') + '">' + escapeHtml(l) + '</div>'
+    ).join("");
+  }
+
+  function escapeHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function renderState() {
+    const step = currentScript.steps[stepIdx];
+    renderCode();
+    stackView.innerHTML = step.stack.length
+      ? step.stack.map(v => '<div class="mem-box">' + escapeHtml(v.name) + '<br><small>' + escapeHtml(v.desc) + '</small></div>').join("")
+      : '<div style="color:var(--muted); font-size:.85rem;">(пусто)</div>';
+    heapView.innerHTML = step.heap.length
+      ? step.heap.map(h => '<div class="mem-box ' + (h.cls || "") + '">#' + h.id + ' = ' + escapeHtml(h.val) + '</div>').join("")
+      : '<div style="color:var(--muted); font-size:.85rem;">(пусто)</div>';
+    noteBox.textContent = step.note;
+    if (step.warning) {
+      warningBox.textContent = step.warning;
+      warningBox.classList.add("show");
+    } else {
+      warningBox.classList.remove("show");
+    }
+    nextBtn.disabled = stepIdx >= currentScript.steps.length - 1;
+    nextBtn.textContent = stepIdx >= currentScript.steps.length - 1 ? "Конец программы" : "Следующая строка ▸";
+  }
+
+  function loadScript(key) {
+    currentScript = SCRIPTS[key];
+    stepIdx = 0;
+    renderState();
+    document.querySelectorAll(".presets button").forEach(b => b.classList.toggle("active", b.dataset.key === key));
+  }
+
+  nextBtn.addEventListener("click", () => {
+    if (stepIdx < currentScript.steps.length - 1) {
+      stepIdx++;
+      renderState();
+    }
+  });
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    stepIdx = 0;
+    renderState();
+  });
+
+  Object.keys(SCRIPTS).forEach(key => {
+    const btn = document.createElement("button");
+    btn.textContent = SCRIPTS[key].name;
+    btn.dataset.key = key;
+    btn.addEventListener("click", () => loadScript(key));
+    presetsEl.appendChild(btn);
+  });
+
+  loadScript("safe");
+})();
+</script>
+</body>
+</html>
