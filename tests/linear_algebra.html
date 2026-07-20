@@ -32,7 +32,8 @@
   .meta { display: flex; justify-content: space-between; font-size: .85rem; color: var(--muted); margin-top: 6px; }
   .block-label { display: inline-block; background: var(--card); border: 1px solid var(--border); color: var(--accent); font-size: .75rem; padding: 3px 10px; border-radius: 20px; margin-bottom: 10px; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-top: 10px; }
-  .question { font-size: 1.08rem; margin: 0 0 16px; white-space: pre-wrap; }
+  .question { font-size: 1.08rem; margin: 0 0 10px; white-space: pre-wrap; }
+  .qsearch { margin: 0 0 14px; }
   .options { display: flex; flex-direction: column; gap: 10px; }
   .opt {
     display: block; width: 100%; text-align: left;
@@ -187,6 +188,7 @@
 
     let html = '<div class="card">';
     html += '<div class="question">' + escapeHtml(q.q) + '</div>';
+    html += '<div class="qsearch"><a class="iconbtn" target="_blank" rel="noopener" href="https://www.google.com/search?q=' + encodeURIComponent(q.q) + '">🔍 Найти в Google</a></div>';
     html += '<div class="options">';
     q.options.forEach((opt, i) => {
       let cls = "opt";
