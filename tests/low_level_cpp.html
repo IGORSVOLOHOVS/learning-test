@@ -127,15 +127,16 @@
 
 <div class="modal-overlay" id="syncModal">
   <div class="modal">
-    <h3>Синхронизация с Google Drive</h3>
-    <p id="syncStatus" style="color:var(--muted); font-size:.9rem;">Не подключено</p>
-    <button class="btn" id="syncUploadBtn">⬆️ Отправить прогресс в Drive</button>
-    <button class="btn secondary" id="syncDownloadBtn">⬇️ Загрузить прогресс из Drive</button>
+    <h3>Синхронизация всех тестов с Google Drive</h3>
+    <p id="syncStatus" style="color:var(--muted); font-size:.9rem;">Один вход — синхронизируются сразу все тесты.</p>
+    <button class="btn" id="syncUploadBtn">⬆️ Отправить весь прогресс в Drive</button>
+    <button class="btn secondary" id="syncDownloadBtn">⬇️ Загрузить весь прогресс из Drive</button>
     <button class="btn secondary" id="syncCloseBtn">Закрыть</button>
   </div>
 </div>
 
 <script src="../config.js"></script>
+<script src="../sync.js"></script>
 <script>
 (function () {
   const TEST_ID = "low_level_cpp";
@@ -283,7 +284,7 @@
 
   render();
 
-  // ---- Google Drive sync ----
+  // ---- Синхронизация всех тестов (Google Drive), общий модуль sync.js ----
   const toastEl = document.getElementById("toast");
   function toast(msg) {
     toastEl.textContent = msg;
@@ -293,102 +294,53 @@
 
   const syncModal = document.getElementById("syncModal");
   const syncStatus = document.getElementById("syncStatus");
-  let accessToken = null;
-  let tokenClient = null;
+  const uploadBtn = document.getElementById("syncUploadBtn");
+  const downloadBtn = document.getElementById("syncDownloadBtn");
 
-  function driveConfigured() {
-    return typeof window.GOOGLE_CLIENT_ID === "string" && window.GOOGLE_CLIENT_ID.length > 0;
-  }
-
-  function ensureGis(cb) {
-    if (window.google && window.google.accounts && window.google.accounts.oauth2) { cb(); return; }
-    const s = document.createElement("script");
-    s.src = "https://accounts.google.com/gsi/client";
-    s.onload = cb;
-    s.onerror = () => toast("Не удалось загрузить Google Identity Services (нет интернета?)");
-    document.head.appendChild(s);
-  }
-
-  function getToken(cb) {
-    if (accessToken) { cb(); return; }
-    ensureGis(() => {
-      if (!tokenClient) {
-        tokenClient = google.accounts.oauth2.initTokenClient({
-          client_id: window.GOOGLE_CLIENT_ID,
-          scope: "https://www.googleapis.com/auth/drive.file",
-          callback: (resp) => {
-            if (resp.error) { toast("Ошибка авторизации: " + resp.error); return; }
-            accessToken = resp.access_token;
-            syncStatus.textContent = "Подключено к Google";
-            cb();
-          }
-        });
-      }
-      tokenClient.requestAccessToken({ prompt: accessToken ? "" : "consent" });
-    });
-  }
-
-  const DRIVE_FILENAME = "learntest_" + TEST_ID + ".json";
-
-  function driveFindFile(cb) {
-    fetch("https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent("name='" + DRIVE_FILENAME + "' and trashed=false") + "&spaces=drive&fields=files(id,name)", {
-      headers: { Authorization: "Bearer " + accessToken }
-    }).then(r => r.json()).then(d => cb((d.files && d.files[0]) || null)).catch(() => cb(null));
-  }
-
-  function driveUpload() {
-    getToken(() => {
-      driveFindFile((file) => {
-        const metadata = { name: DRIVE_FILENAME, mimeType: "application/json" };
-        const boundary = "-------314159265358979323846";
-        const body =
-          "--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" + JSON.stringify(metadata) +
-          "\r\n--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" + JSON.stringify(state) +
-          "\r\n--" + boundary + "--";
-        const url = file
-          ? "https://www.googleapis.com/upload/drive/v3/files/" + file.id + "?uploadType=multipart"
-          : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
-        fetch(url, {
-          method: file ? "PATCH" : "POST",
-          headers: { Authorization: "Bearer " + accessToken, "Content-Type": "multipart/related; boundary=" + boundary },
-          body
-        }).then(r => {
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          toast("Прогресс отправлен в Drive");
-          syncModal.classList.remove("show");
-        }).catch(e => toast("Ошибка отправки: " + e.message));
-      });
-    });
-  }
-
-  function driveDownload() {
-    getToken(() => {
-      driveFindFile((file) => {
-        if (!file) { toast("Файл в Drive не найден"); return; }
-        fetch("https://www.googleapis.com/drive/v3/files/" + file.id + "?alt=media", {
-          headers: { Authorization: "Bearer " + accessToken }
-        }).then(r => r.json()).then(remote => {
-          if (!confirm("Заменить локальный прогресс данными из Drive?")) return;
-          state = remote;
-          saveState();
-          render();
-          toast("Прогресс загружен из Drive");
-          syncModal.classList.remove("show");
-        }).catch(e => toast("Ошибка загрузки: " + e.message));
-      });
-    });
-  }
+  function setBusy(busy) { uploadBtn.disabled = busy; downloadBtn.disabled = busy; }
 
   document.getElementById("syncBtn").addEventListener("click", () => {
-    if (!driveConfigured()) {
+    if (!window.LTSync || !LTSync.configured()) {
       toast("Синхронизация не настроена: укажите GOOGLE_CLIENT_ID в config.js");
       return;
     }
+    syncStatus.textContent = LTSync.hasToken()
+      ? "Google уже подключён — вход не потребуется."
+      : "Один вход — синхронизируются сразу все тесты.";
     syncModal.classList.add("show");
   });
   document.getElementById("syncCloseBtn").addEventListener("click", () => syncModal.classList.remove("show"));
-  document.getElementById("syncUploadBtn").addEventListener("click", driveUpload);
-  document.getElementById("syncDownloadBtn").addEventListener("click", driveDownload);
+
+  uploadBtn.addEventListener("click", () => {
+    setBusy(true);
+    syncStatus.textContent = "Отправка…";
+    LTSync.uploadAll({
+      onProgress: (d, t) => { syncStatus.textContent = "Отправка… " + d + "/" + t; },
+      onDone: (ok, failed) => {
+        setBusy(false);
+        toast(failed ? ("Отправлено " + ok + ", ошибок: " + failed) : ("Отправлено тестов: " + ok));
+        syncModal.classList.remove("show");
+      },
+      onError: (msg) => { setBusy(false); toast(msg); syncStatus.textContent = msg; }
+    });
+  });
+
+  downloadBtn.addEventListener("click", () => {
+    if (!confirm("Заменить локальный прогресс всех тестов данными из Drive?")) return;
+    setBusy(true);
+    syncStatus.textContent = "Загрузка…";
+    LTSync.downloadAll({
+      onProgress: (d, t) => { syncStatus.textContent = "Загрузка… " + d + "/" + t; },
+      onDone: (ok, failed) => {
+        setBusy(false);
+        state = loadState();
+        render();
+        toast(failed ? ("Загружено " + ok + ", ошибок: " + failed) : ("Загружено тестов: " + ok));
+        syncModal.classList.remove("show");
+      },
+      onError: (msg) => { setBusy(false); toast(msg); syncStatus.textContent = msg; }
+    });
+  });
 })();
 </script>
 </body>
