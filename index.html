@@ -35,6 +35,32 @@
   .progress-mini { height: 6px; background: var(--border); border-radius: 4px; overflow: hidden; margin-top: 8px; }
   .progress-mini > div { height: 100%; background: var(--accent); }
   .progress-mini.done > div { background: var(--good); }
+  .topbar { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .iconbtn {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 10px; padding: 8px 12px; font-size: .85rem; cursor: pointer;
+    text-decoration: none; display: inline-flex; align-items: center;
+  }
+  button.btn {
+    width: 100%; padding: 14px; font-size: 1rem; border-radius: 12px; border: none;
+    background: var(--accent); color: white; cursor: pointer; font-weight: 600; margin-top: 10px;
+  }
+  button.btn.secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+  button.btn:disabled { opacity: .5; pointer-events: none; }
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 18px; border-radius: 10px; font-size: .9rem; opacity: 0;
+    transition: opacity .3s; pointer-events: none; z-index: 100; max-width: 90%; text-align: center;
+  }
+  .toast.show { opacity: 1; }
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    align-items: center; justify-content: center; z-index: 200; padding: 20px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; max-width: 380px; width: 100%; }
+  .modal h3 { margin-top: 0; }
   @media (prefers-color-scheme: light) {
     :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80; --border: #e3e5ee; }
   }
@@ -42,11 +68,28 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Мои тесты для повторения</h1>
+  <div class="topbar">
+    <h1>Мои тесты для повторения</h1>
+    <button class="iconbtn" id="syncBtn">☁️ Синхронизировать всё</button>
+  </div>
   <div class="subtitle">20 тестов · 50 вопросов каждый · прогресс сохраняется на устройстве</div>
   <div id="list"></div>
 </div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="syncModal">
+  <div class="modal">
+    <h3>Синхронизация всех тестов с Google Drive</h3>
+    <p id="syncStatus" style="color:var(--muted); font-size:.9rem;">Один вход — синхронизируются сразу все тесты.</p>
+    <button class="btn" id="syncUploadBtn">⬆️ Отправить весь прогресс в Drive</button>
+    <button class="btn secondary" id="syncDownloadBtn">⬇️ Загрузить весь прогресс из Drive</button>
+    <button class="btn secondary" id="syncCloseBtn">Закрыть</button>
+  </div>
+</div>
+
 <script src="config.js"></script>
+<script src="sync.js"></script>
 <script>
   const TESTS = [
     ["probability_statistics", "Вероятность и статистика"],
@@ -72,28 +115,93 @@
   ];
 
   const list = document.getElementById("list");
-  TESTS.forEach(([slug, title]) => {
-    let state = null;
-    try { state = JSON.parse(localStorage.getItem("learntest_" + slug)); } catch (e) {}
-    const total = 50;
-    const current = state ? state.current : 0;
-    const answered = state ? Object.keys(state.answers || {}).length : 0;
-    const done = current >= total;
-    const pct = Math.round((Math.min(current, total) / total) * 100);
+  function renderList() {
+    list.innerHTML = "";
+    TESTS.forEach(([slug, title]) => {
+      let state = null;
+      try { state = JSON.parse(localStorage.getItem("learntest_" + slug)); } catch (e) {}
+      const total = 50;
+      const current = state ? state.current : 0;
+      const answered = state ? Object.keys(state.answers || {}).length : 0;
+      const done = current >= total;
+      const pct = Math.round((Math.min(current, total) / total) * 100);
 
-    let correct = 0;
-    if (state && state.answers) {
-      Object.values(state.answers).forEach(a => { if (a.correct) correct++; });
+      let correct = 0;
+      if (state && state.answers) {
+        Object.values(state.answers).forEach(a => { if (a.correct) correct++; });
+      }
+
+      const a = document.createElement("a");
+      a.className = "card";
+      a.href = "tests/" + slug + ".html";
+      a.innerHTML =
+        '<h2>' + title + '</h2>' +
+        '<div class="meta"><span>' + (done ? ('Завершено: ' + correct + '/' + total) : (answered > 0 ? ('Пройдено ' + current + '/' + total) : 'Не начато')) + '</span><span>' + pct + '%</span></div>' +
+        '<div class="progress-mini' + (done ? ' done' : '') + '"><div style="width:' + pct + '%"></div></div>';
+      list.appendChild(a);
+    });
+  }
+  renderList();
+
+  // ---- Синхронизация всех тестов ----
+  const toastEl = document.getElementById("toast");
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    setTimeout(() => toastEl.classList.remove("show"), 2500);
+  }
+  const syncModal = document.getElementById("syncModal");
+  const syncStatus = document.getElementById("syncStatus");
+  const uploadBtn = document.getElementById("syncUploadBtn");
+  const downloadBtn = document.getElementById("syncDownloadBtn");
+
+  function setBusy(busy) {
+    uploadBtn.disabled = busy;
+    downloadBtn.disabled = busy;
+  }
+
+  document.getElementById("syncBtn").addEventListener("click", () => {
+    if (!window.LTSync || !LTSync.configured()) {
+      toast("Синхронизация не настроена: укажите GOOGLE_CLIENT_ID в config.js");
+      return;
     }
+    syncStatus.textContent = LTSync.hasToken()
+      ? "Google уже подключён — вход не потребуется."
+      : "Один вход — синхронизируются сразу все тесты.";
+    syncModal.classList.add("show");
+  });
+  document.getElementById("syncCloseBtn").addEventListener("click", () => syncModal.classList.remove("show"));
 
-    const a = document.createElement("a");
-    a.className = "card";
-    a.href = "tests/" + slug + ".html";
-    a.innerHTML =
-      '<h2>' + title + '</h2>' +
-      '<div class="meta"><span>' + (done ? ('Завершено: ' + correct + '/' + total) : (answered > 0 ? ('Пройдено ' + current + '/' + total) : 'Не начато')) + '</span><span>' + pct + '%</span></div>' +
-      '<div class="progress-mini' + (done ? ' done' : '') + '"><div style="width:' + pct + '%"></div></div>';
-    list.appendChild(a);
+  uploadBtn.addEventListener("click", () => {
+    setBusy(true);
+    syncStatus.textContent = "Отправка…";
+    LTSync.uploadAll({
+      onProgress: (d, t) => { syncStatus.textContent = "Отправка… " + d + "/" + t; },
+      onDone: (ok, failed) => {
+        setBusy(false);
+        toast(failed ? ("Отправлено " + ok + ", ошибок: " + failed) : ("Отправлено тестов: " + ok));
+        syncStatus.textContent = "Готово.";
+        syncModal.classList.remove("show");
+      },
+      onError: (msg) => { setBusy(false); toast(msg); syncStatus.textContent = msg; }
+    });
+  });
+
+  downloadBtn.addEventListener("click", () => {
+    if (!confirm("Заменить локальный прогресс всех тестов данными из Drive?")) return;
+    setBusy(true);
+    syncStatus.textContent = "Загрузка…";
+    LTSync.downloadAll({
+      onProgress: (d, t) => { syncStatus.textContent = "Загрузка… " + d + "/" + t; },
+      onDone: (ok, failed) => {
+        setBusy(false);
+        renderList();
+        toast(failed ? ("Загружено " + ok + ", ошибок: " + failed) : ("Загружено тестов: " + ok));
+        syncStatus.textContent = "Готово.";
+        syncModal.classList.remove("show");
+      },
+      onError: (msg) => { setBusy(false); toast(msg); syncStatus.textContent = msg; }
+    });
   });
 </script>
 </body>
