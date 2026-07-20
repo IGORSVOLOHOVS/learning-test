@@ -53,6 +53,17 @@
     font-size: .92rem; color: #c7cadb; display: none;
   }
   .explain.show { display: block; }
+  .usage { margin-top: 12px; display: none; flex-direction: column; gap: 10px; }
+  .usage.show { display: flex; }
+  .usage .u-part { padding: 10px 12px; border-radius: 10px; background: #171a24; border-left: 3px solid var(--border); }
+  .usage .u-without { border-left-color: var(--bad); }
+  .usage .u-with { border-left-color: var(--good); }
+  .usage .u-label { font-weight: 700; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; color: var(--muted); }
+  .usage .u-without .u-label { color: var(--bad); }
+  .usage .u-with .u-label { color: var(--good); }
+  .usage .u-text { font-size: .9rem; color: #c7cadb; white-space: pre-wrap; }
+  .usage pre { margin: 0; padding: 8px 10px; border-radius: 8px; background: #0f1117; overflow-x: auto; white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .84rem; line-height: 1.45; color: #d7dbe8; }
+  .usage .u-benefit { padding: 9px 12px; border-radius: 10px; background: rgba(47,191,113,0.14); font-size: .9rem; color: var(--text); }
   .nav { display: flex; gap: 10px; margin-top: 18px; }
   button.btn {
     flex: 1; padding: 14px; font-size: 1rem; border-radius: 12px; border: none;
@@ -93,6 +104,9 @@
     }
     .opt { background: #f7f8fc; }
     .explain { background: #f0f2fa; color: #3a3d4d; }
+    .usage .u-part { background: #f0f2fa; }
+    .usage .u-text { color: #3a3d4d; }
+    .usage pre { background: #eceef7; color: #23262f; }
   }
 </style>
 </head>
@@ -203,6 +217,15 @@
     });
     html += '</div>';
     html += '<div class="explain' + (answered ? ' show' : '') + '" id="explainBox">' + escapeHtml(q.explain || "") + '</div>';
+    if (q.usage) {
+      const u = q.usage;
+      const wrap = (s) => u.code ? ('<pre>' + escapeHtml(s || "") + '</pre>') : ('<div class="u-text">' + escapeHtml(s || "") + '</div>');
+      html += '<div class="usage' + (answered ? ' show' : '') + '">';
+      html += '<div class="u-part u-without"><div class="u-label">Без этого</div>' + wrap(u.without) + '</div>';
+      html += '<div class="u-part u-with"><div class="u-label">С этим</div>' + wrap(u.with) + '</div>';
+      if (u.benefit) html += '<div class="u-benefit">✅ Выгода: ' + escapeHtml(u.benefit) + '</div>';
+      html += '</div>';
+    }
     html += '</div>';
     html += '<div class="nav">';
     html += '<button class="btn secondary" id="prevBtn"' + (idx === 0 ? ' disabled' : '') + '>Назад</button>';
