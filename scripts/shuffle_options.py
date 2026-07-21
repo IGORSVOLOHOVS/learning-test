@@ -43,11 +43,13 @@ def distribution():
     print(f"  всего вопросов: {total}")
 
 
-def shuffle_all():
+def shuffle_all(slugs=None):
     rng = random.Random(SEED)
     changed = 0
     for name in sorted(os.listdir(CONTENT_DIR)):
         if not name.endswith(".json"):
+            continue
+        if slugs and name[:-5] not in slugs:
             continue
         path = os.path.join(CONTENT_DIR, name)
         with open(path, encoding="utf-8") as f:
@@ -76,15 +78,15 @@ def shuffle_all():
 
 
 def main():
+    # Позиционные аргументы = slug'и тестов для перемешивания (по умолчанию все).
+    # Так можно перемешать только новый тест, не трогая существующие.
+    slugs = [a for a in sys.argv[1:] if not a.startswith("-")]
+    slugs = slugs or None
     if "--check" in sys.argv:
         distribution()
         return
-    print("== ДО ==")
-    distribution()
-    print("\nПеремешиваю...")
-    shuffle_all()
-    print("\n== ПОСЛЕ ==")
-    distribution()
+    print("Перемешиваю" + (f" ({', '.join(slugs)})" if slugs else " все тесты") + "...")
+    shuffle_all(slugs)
 
 
 if __name__ == "__main__":
