@@ -29,6 +29,7 @@ TOPICS = {
     "iso_standards": {"title": "ISO стандарты (менеджмент и ИТ)", "sim": "iso_standards"},
     "tiktok_algorithm": {"title": "TikTok: алгоритмы рекомендаций", "sim": "tiktok_algorithm"},
     "visual_math": {"title": "Визуальное объяснение математических концепций", "sim": "visual_math"},
+    "cpu_pipeline": {"title": "Конвейер команд и параллелизм (ILP)", "sim": ""},
 }
 
 
