@@ -20,7 +20,6 @@ TOPICS = {
     "electronics": {"title": "Основы электроники", "sim": "electronics"},
     "facial_emotion_recognition": {"title": "Распознавание эмоций человека по лицу", "sim": "facial_emotion_recognition"},
     "first_impression": {"title": "Техники первого впечатления", "sim": "first_impression"},
-    "pragmatics_model": {"title": "Двухэтапная модель прагматика", "sim": "pragmatics_model"},
     "photography_exposure": {"title": "Выдержка в фотографии и её контекст", "sim": "photography_exposure"},
     "network_drivers": {"title": "Сетевые драйверы", "sim": "network_drivers"},
     "low_level_cpp": {"title": "Низкоуровневый C++", "sim": "low_level_cpp"},
