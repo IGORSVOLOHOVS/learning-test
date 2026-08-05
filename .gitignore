@@ -4,3 +4,4 @@ scripts/tasks_raw.json
 scripts/filtered_candidates.json
 __pycache__/
 *.pyc
+.env
