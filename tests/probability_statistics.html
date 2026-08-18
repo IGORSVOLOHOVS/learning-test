@@ -175,7 +175,33 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
+  // Fisher-Yates shuffle (returns a new array, does not mutate input)
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+    }
+    return a;
+  }
+
+  // Builds a fresh, randomized copy of QUESTIONS: each question's options are
+  // shuffled and its correct-answer index remapped to match. Every other field
+  // (q, explain, usage, ...) is carried over untouched. Regenerated on every
+  // page load and on every "reset progress" click (never persisted), so the
+  // position of the correct answer can't be memorized across attempts.
+  function buildShuffledQuestions() {
+    return QUESTIONS.map(q => {
+      const order = shuffle(q.options.map((_, i) => i));
+      return Object.assign({}, q, {
+        options: order.map(i => q.options[i]),
+        correct: order.indexOf(q.correct)
+      });
+    });
+  }
+
   let state = loadState();
+  let SHUFFLED = buildShuffledQuestions();
 
   const quizArea = document.getElementById("quizArea");
   const resultArea = document.getElementById("resultArea");
@@ -194,7 +220,7 @@
     quizArea.style.display = "block";
 
     const idx = state.current;
-    const q = QUESTIONS[idx];
+    const q = SHUFFLED[idx];
     const answered = state.answers[idx];
 
     progressFill.style.width = Math.round((idx / QUESTIONS.length) * 100) + "%";
@@ -210,7 +236,7 @@
       if (answered) {
         cls += " disabled";
         if (i === q.correct) cls += " correct";
-        else if (i === answered.selected) cls += " wrong";
+        else if (opt === answered.selectedText && !answered.correct) cls += " wrong";
         else cls += " dim";
       }
       html += '<button class="' + cls + '" data-i="' + i + '">' + escapeHtml(opt) + '</button>';
@@ -238,7 +264,7 @@
       btn.addEventListener("click", () => {
         if (state.answers[idx]) return;
         const sel = parseInt(btn.dataset.i, 10);
-        state.answers[idx] = { selected: sel, correct: sel === q.correct };
+        state.answers[idx] = { selectedText: q.options[sel], correct: sel === q.correct };
         saveState();
         render();
       });
@@ -300,6 +326,7 @@
   document.getElementById("resetBtn").addEventListener("click", () => {
     if (confirm("Сбросить весь прогресс этого теста?")) {
       state = { current: 0, answers: {} };
+      SHUFFLED = buildShuffledQuestions();
       saveState();
       render();
     }
