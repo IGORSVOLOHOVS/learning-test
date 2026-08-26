@@ -7,7 +7,8 @@ CONTENT_DIR = os.path.join(HERE, "content")
 TESTS_DIR = os.path.join(ROOT, "tests")
 TEMPLATE_PATH = os.path.join(HERE, "template.html")
 
-# slug -> {title, sim: optional sim slug (same as topic slug) if a sims/*.html exists for it}
+# slug -> {title, sim}. sim: пусто -> кнопки лаборатории нет; slug -> ссылка на
+# sims/<slug>.html; полный URL (http...) -> внешняя лаборатория, открывается в новой вкладке.
 TOPICS = {
     "probability_statistics": {"title": "Вероятность и статистика", "sim": "probability_statistics"},
     "linear_algebra": {"title": "Линейная алгебра (матрицы, SVD)", "sim": "linear_algebra"},
@@ -29,6 +30,10 @@ TOPICS = {
     "tiktok_algorithm": {"title": "TikTok: алгоритмы рекомендаций", "sim": "tiktok_algorithm"},
     "visual_math": {"title": "Визуальное объяснение математических концепций", "sim": "visual_math"},
     "cpu_pipeline": {"title": "Конвейер команд и параллелизм (ILP)", "sim": ""},
+    "wifi7_rdkb": {
+        "title": "Wi-Fi 7 в RDK-B: MLD, hostapd и драйвер",
+        "sim": "https://claude.ai/code/artifact/178d80bf-b84f-49fd-a106-22b646a48833",
+    },
 }
 
 
@@ -44,7 +49,11 @@ def build_one(slug, title, sim, template):
         if not (0 <= q["correct"] <= 3):
             raise ValueError(f"{slug} q{i}: correct index out of range")
 
-    if sim:
+    if sim.startswith("http://") or sim.startswith("https://"):
+        sim_link_html = (
+            f'<a class="iconbtn" href="{sim}" target="_blank" rel="noopener">🔬 Лаборатория</a>'
+        )
+    elif sim:
         sim_link_html = f'<a class="iconbtn" href="../sims/{sim}.html">🔬 Лаборатория</a>'
     else:
         sim_link_html = ""
