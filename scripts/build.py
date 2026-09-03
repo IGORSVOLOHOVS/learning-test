@@ -38,6 +38,22 @@ TOPICS = {
         "title": "Yocto, BitBake и devtool: рецепты и патчи",
         "sim": "yocto_bitbake_devtool",
     },
+    "linux_device_access": {
+        "title": "Доступ к устройству: ssh, scp, tftp, tio",
+        "sim": "",
+    },
+    "dmcli_rdkb": {
+        "title": "dmcli и TR-181: radio, SSID, BSSID",
+        "sim": "",
+    },
+    "wifi7_mlo": {
+        "title": "MLO в Wi-Fi 7: линки, STR, EMLSR",
+        "sim": "",
+    },
+    "git_patches": {
+        "title": "Git и патчи: format-patch, am, rebase",
+        "sim": "",
+    },
 }
 
 
