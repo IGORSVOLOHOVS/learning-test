@@ -34,6 +34,10 @@ TOPICS = {
         "title": "Wi-Fi 7 в RDK-B: MLD, hostapd и драйвер",
         "sim": "https://claude.ai/code/artifact/178d80bf-b84f-49fd-a106-22b646a48833",
     },
+    "yocto_bitbake_devtool": {
+        "title": "Yocto, BitBake и devtool: рецепты и патчи",
+        "sim": "yocto_bitbake_devtool",
+    },
 }
 
 
