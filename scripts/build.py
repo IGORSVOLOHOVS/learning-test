@@ -54,6 +54,10 @@ TOPICS = {
         "title": "Git и патчи: format-patch, am, rebase",
         "sim": "",
     },
+    "mac_ip_bridges": {
+        "title": "MAC, IP, интерфейсы и мосты: tcpdump и tshark",
+        "sim": "",
+    },
 }
 
 
