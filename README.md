@@ -2,9 +2,9 @@
 
 A set of self-marking study tests, published as a static site on GitHub Pages.
 
-Twenty-seven topics so far, from linear algebra and probability to computer
+Twenty-eight topics so far, from linear algebra and probability to computer
 vision, low-level C++, CPU pipelines, network drivers, packet capture with
-tcpdump and photographic exposure. Each test is fifty multiple-choice questions
+tcpdump, firmware logging and photographic exposure. Each test is fifty multiple-choice questions
 with four options, an explanation, and a worked "without this / with this"
 example.
 

@@ -58,6 +58,10 @@ TOPICS = {
         "title": "MAC, IP, интерфейсы и мосты: tcpdump и tshark",
         "sim": "",
     },
+    "rtlog_firmware": {
+        "title": "RT-Logger и логи прошивки: сбор и декодирование",
+        "sim": "",
+    },
 }
 
 
