@@ -62,6 +62,10 @@ TOPICS = {
         "title": "RT-Logger и логи прошивки: сбор и декодирование",
         "sim": "",
     },
+    "shell_best_practices": {
+        "title": "Shell best practices: POSIX sh, BitBake, ревью",
+        "sim": "",
+    },
 }
 
 

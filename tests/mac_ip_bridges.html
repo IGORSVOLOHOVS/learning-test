@@ -33,6 +33,8 @@
   .block-label { display: inline-block; background: var(--card); border: 1px solid var(--border); color: var(--accent); font-size: .75rem; padding: 3px 10px; border-radius: 20px; margin-bottom: 10px; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-top: 10px; }
   .question { font-size: 1.08rem; margin: 0 0 10px; white-space: pre-wrap; }
+  .question pre.qcode { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #0f1117; border: 1px solid var(--border); overflow-x: auto; white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82rem; line-height: 1.5; color: #d7dbe8; }
+  .opt code.optcode { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88rem; white-space: pre-wrap; }
   .qsearch { margin: 0 0 14px; }
   .options { display: flex; flex-direction: column; gap: 10px; }
   .opt {
@@ -107,6 +109,7 @@
     .usage .u-part { background: #f0f2fa; }
     .usage .u-text { color: #3a3d4d; }
     .usage pre { background: #eceef7; color: #23262f; }
+    .question pre.qcode { background: #eceef7; color: #23262f; }
   }
 </style>
 </head>
@@ -228,8 +231,8 @@
     blockLabel.textContent = "Блок " + (blockOf(idx) + 1) + ": " + BLOCK_NAMES[blockOf(idx)];
 
     let html = '<div class="card">';
-    html += '<div class="question">' + escapeHtml(q.q) + '</div>';
-    html += '<div class="qsearch"><a class="iconbtn" target="_blank" rel="noopener" href="https://www.google.com/search?q=' + encodeURIComponent(q.q) + '">🔍 Найти в Google</a></div>';
+    html += '<div class="question">' + renderQuestion(q.q) + '</div>';
+    html += '<div class="qsearch"><a class="iconbtn" target="_blank" rel="noopener" href="https://www.google.com/search?q=' + encodeURIComponent(questionSearchText(q.q)) + '">🔍 Найти в Google</a></div>';
     html += '<div class="options">';
     q.options.forEach((opt, i) => {
       let cls = "opt";
@@ -239,7 +242,7 @@
         else if (opt === answered.selectedText && !answered.correct) cls += " wrong";
         else cls += " dim";
       }
-      html += '<button class="' + cls + '" data-i="' + i + '">' + escapeHtml(opt) + '</button>';
+      html += '<button class="' + cls + '" data-i="' + i + '">' + renderOption(opt) + '</button>';
     });
     html += '</div>';
     html += '<div class="explain' + (answered ? ' show' : '') + '" id="explainBox">' + escapeHtml(q.explain || "") + '</div>';
@@ -321,6 +324,34 @@
     const div = document.createElement("div");
     div.textContent = s == null ? "" : s;
     return div.innerHTML;
+  }
+
+  // Текст вопроса может нести фрагменты кода в тройных кавычках: они идут в
+  // <pre> моноширинным шрифтом, остальное — как обычный текст. Вопрос без
+  // тройных кавычек рендерится ровно как раньше.
+  function renderQuestion(text) {
+    const parts = String(text == null ? "" : text).split("```");
+    let out = "";
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 1) out += '<pre class="qcode">' + escapeHtml(parts[i].replace(/^\n/, "").replace(/\n$/, "")) + '</pre>';
+      else if (parts[i]) out += escapeHtml(parts[i]);
+    }
+    return out;
+  }
+
+  // Поиск в Google — по тексту вопроса без фрагментов кода.
+  function questionSearchText(text) {
+    const parts = String(text == null ? "" : text).split("```");
+    return parts.filter(function (_, i) { return i % 2 === 0; }).join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  // Вариант ответа целиком в обратных кавычках — это код, моноширинно.
+  function renderOption(opt) {
+    const s = String(opt == null ? "" : opt);
+    if (s.length > 2 && s.charAt(0) === "`" && s.charAt(s.length - 1) === "`") {
+      return '<code class="optcode">' + escapeHtml(s.slice(1, -1)) + '</code>';
+    }
+    return escapeHtml(s);
   }
 
   document.getElementById("resetBtn").addEventListener("click", () => {
