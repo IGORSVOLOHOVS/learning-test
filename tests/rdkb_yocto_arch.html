@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Архитектура RDK-B: Yocto, слои, SDK, вендор</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d29;
+    --text: #eef0f6;
+    --muted: #8b8fa3;
+    --accent: #5b8cff;
+    --good: #2fbf71;
+    --bad: #ef5350;
+    --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 17px;
+    line-height: 1.45;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 100px; }
+  header { padding: 14px 0 10px; }
+  h1 { font-size: 1.2rem; margin: 0 0 10px; }
+  .progressbar { height: 8px; background: var(--border); border-radius: 5px; overflow: hidden; }
+  .progressbar > div { height: 100%; background: var(--accent); transition: width .25s; }
+  .meta { display: flex; justify-content: space-between; font-size: .85rem; color: var(--muted); margin-top: 6px; }
+  .block-label { display: inline-block; background: var(--card); border: 1px solid var(--border); color: var(--accent); font-size: .75rem; padding: 3px 10px; border-radius: 20px; margin-bottom: 10px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-top: 10px; }
+  .question { font-size: 1.08rem; margin: 0 0 10px; white-space: pre-wrap; }
+  .question pre.qcode { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #0f1117; border: 1px solid var(--border); overflow-x: auto; white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82rem; line-height: 1.5; color: #d7dbe8; }
+  .opt code.optcode { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88rem; white-space: pre-wrap; }
+  .qsearch { margin: 0 0 14px; }
+  .options { display: flex; flex-direction: column; gap: 10px; }
+  .opt {
+    display: block; width: 100%; text-align: left;
+    background: #232838; color: var(--text);
+    border: 2px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; font-size: 1rem; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .opt:active { transform: scale(0.995); }
+  .opt.correct { border-color: var(--good); background: rgba(47,191,113,0.15); }
+  .opt.wrong { border-color: var(--bad); background: rgba(239,83,80,0.15); }
+  .opt.disabled { pointer-events: none; opacity: .85; }
+  .opt.dim { opacity: .5; }
+  .explain {
+    margin-top: 14px; padding: 12px 14px; border-radius: 10px;
+    background: #171a24; border-left: 3px solid var(--accent);
+    font-size: .92rem; color: #c7cadb; display: none;
+  }
+  .explain.show { display: block; }
+  .usage { margin-top: 12px; display: none; flex-direction: column; gap: 10px; }
+  .usage.show { display: flex; }
+  .usage .u-part { padding: 10px 12px; border-radius: 10px; background: #171a24; border-left: 3px solid var(--border); }
+  .usage .u-without { border-left-color: var(--bad); }
+  .usage .u-with { border-left-color: var(--good); }
+  .usage .u-label { font-weight: 700; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; color: var(--muted); }
+  .usage .u-without .u-label { color: var(--bad); }
+  .usage .u-with .u-label { color: var(--good); }
+  .usage .u-text { font-size: .9rem; color: #c7cadb; white-space: pre-wrap; }
+  .usage pre { margin: 0; padding: 8px 10px; border-radius: 8px; background: #0f1117; overflow-x: auto; white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .84rem; line-height: 1.45; color: #d7dbe8; }
+  .usage .u-benefit { padding: 9px 12px; border-radius: 10px; background: rgba(47,191,113,0.14); font-size: .9rem; color: var(--text); }
+  .nav { display: flex; gap: 10px; margin-top: 18px; }
+  button.btn {
+    flex: 1; padding: 14px; font-size: 1rem; border-radius: 12px; border: none;
+    background: var(--accent); color: white; cursor: pointer; font-weight: 600;
+  }
+  button.btn.secondary { background: #232838; color: var(--text); border: 1px solid var(--border); }
+  button.btn:disabled { opacity: .4; pointer-events: none; }
+  .topbar { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  .iconbtn {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 10px; padding: 8px 12px; font-size: .85rem; cursor: pointer;
+    text-decoration: none; display: inline-flex; align-items: center;
+  }
+  .result { text-align: center; padding: 20px 0; }
+  .result .score { font-size: 3rem; font-weight: 700; color: var(--accent); }
+  .blockscores { margin-top: 20px; text-align: left; }
+  .blockscores .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .92rem; }
+  a.back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 18px; border-radius: 10px; font-size: .9rem; opacity: 0;
+    transition: opacity .3s; pointer-events: none; z-index: 100; max-width: 90%; text-align: center;
+  }
+  .toast.show { opacity: 1; }
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    align-items: center; justify-content: center; z-index: 200; padding: 20px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; max-width: 380px; width: 100%; }
+  .modal h3 { margin-top: 0; }
+  .modal .btn { margin-top: 10px; }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80;
+      --border: #e3e5ee;
+    }
+    .opt { background: #f7f8fc; }
+    .explain { background: #f0f2fa; color: #3a3d4d; }
+    .usage .u-part { background: #f0f2fa; }
+    .usage .u-text { color: #3a3d4d; }
+    .usage pre { background: #eceef7; color: #23262f; }
+    .question pre.qcode { background: #eceef7; color: #23262f; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topbar">
+      <a class="back" href="../index.html">&larr; Все тесты</a>
+      <div style="display:flex; gap:8px;">
+        
+        <button class="iconbtn" id="syncBtn">☁️ Синхронизировать</button>
+      </div>
+    </div>
+    <h1>Архитектура RDK-B: Yocto, слои, SDK, вендор</h1>
+    <div class="progressbar"><div id="progressFill" style="width:0%"></div></div>
+    <div class="meta">
+      <span id="blockLabel"></span>
+      <span id="progressText">0 / 50</span>
+    </div>
+  </header>
+
+  <div id="quizArea"></div>
+
+  <div id="resultArea" style="display:none"></div>
+
+  <div style="margin-top:24px; text-align:center;">
+    <button class="btn secondary" id="resetBtn">Сбросить прогресс и начать заново</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="syncModal">
+  <div class="modal">
+    <h3>Синхронизация всех тестов с Google Drive</h3>
+    <p id="syncStatus" style="color:var(--muted); font-size:.9rem;">Один вход — синхронизируются сразу все тесты.</p>
+    <button class="btn" id="syncUploadBtn">⬆️ Отправить весь прогресс в Drive</button>
+    <button class="btn secondary" id="syncDownloadBtn">⬇️ Загрузить весь прогресс из Drive</button>
+    <button class="btn secondary" id="syncCloseBtn">Закрыть</button>
+  </div>
+</div>
+
+<script src="../config.js"></script>
+<script src="../sync.js"></script>
+<script>
+(function () {
+  const TEST_ID = "rdkb_yocto_arch";
+  const QUESTIONS = [{"q": "Что такое Poky?", "options": ["Эталонный дистрибутив и сборочное дерево Yocto: BitBake, oe-core, meta-poky", "Отдельный продукт независимой компании, заменяющий Yocto в проектах операторов", "Формат образа файловой системы, в который упаковывается собранный дистрибутив", "Компилятор, которым Yocto собирает пакеты под целевую архитектуру устройства"], "correct": 0, "explain": "Yocto Project — это зонтик из инструментов, документации и релизов, а Poky — его эталонная сборка: репозиторий, где лежат BitBake, слой oe-core и meta-poky. Слово poky обозначает и сам этот репозиторий, и эталонный дистрибутив, который в нём описан.", "usage": {"code": true, "without": "«Мы собираем на Yocto» — непонятно, какое именно дерево и какой дистрибутив.", "with": "git clone git://git.yoctoproject.org/poky\n. poky/oe-init-build-env build-x86", "benefit": "Понятно, откуда взялись bitbake, слой meta и настройки дистрибутива."}}, {"q": "Чем занимается BitBake?", "options": ["Компилирует исходники в машинный код для целевой архитектуры устройства", "Управляет ветками слоёв и синхронизирует их с серверами через манифест", "Разбирает рецепты, строит граф задач и исполняет их в нужном порядке", "Упаковывает готовые файлы в образ и заливает его на устройство по сети"], "correct": 2, "explain": "BitBake — исполнитель задач: он читает рецепты, вычисляет зависимости и запускает do_fetch, do_compile, do_install и остальные задачи. Сама компиляция происходит внутри задач привычными make и gcc, а BitBake только задаёт им порядок и окружение.", "usage": {"code": true, "without": "Порядок сборки компонентов держат в голове и в самописных скриптах.", "with": "bitbake rdk-generic-broadband-image\nbitbake -g <image>   # граф задач в task-depends.dot", "benefit": "Порядок и зависимости вычисляются, а не поддерживаются вручную."}}, {"q": "Что лежит в слое meta внутри poky?", "options": ["Готовые бинарные пакеты, из которых собирается корневая файловая система", "Только классы и конфигурация, без единого рецепта — рецепты живут в других слоях", "Настройки конкретной платы: описание процессора, разметка флеша и загрузчик", "Базовые рецепты и классы OpenEmbedded-Core, общие для любого дистрибутива"], "correct": 3, "explain": "Каталог meta в poky — это слой OpenEmbedded-Core: базовые рецепты вроде busybox и glibc, классы autotools и cmake, общая конфигурация. На нём стоит всё остальное, а специфика платы и дистрибутива добавляется отдельными слоями сверху.", "usage": {"code": true, "without": "Каждый проект тащит собственную копию базовых рецептов и чинит их отдельно.", "with": "bitbake-layers show-layers   # meta, meta-poky, meta-yocto-bsp и далее ваши", "benefit": "Общая база одна, а различия живут в слоях поверх неё."}}, {"q": "Каталог называется meta-wave. Что делает его слоем?", "options": ["Запись в манифесте, по которой repo выкачивает каталог в нужное место дерева", "Наличие хотя бы одного рецепта с расширением bb в подкаталоге recipes", "Имя с префиксом meta-: BitBake ищет слои именно по этому префиксу в дереве", "Файл conf/layer.conf внутри и упоминание пути в bblayers.conf сборки"], "correct": 3, "explain": "Префикс meta- — это соглашение OpenEmbedded, удобное глазу, но ничего не решающее. Слоем каталог делает conf/layer.conf, где объявлены имя коллекции, шаблон путей и приоритет, а подключается он строкой в bblayers.conf сборки.", "usage": {"code": true, "without": "Слой лежит в дереве, но рецептов из него bitbake не видит.", "with": "bitbake-layers add-layer ../meta-wave\nbitbake-layers show-layers", "benefit": "Видно, какие слои реально участвуют в сборке и с каким приоритетом."}}, {"q": "Что описывает файл рецепта с расширением bb?", "options": ["Зависимости всего дистрибутива в виде графа, который потом исполняет BitBake", "Правила сборки одного компонента: откуда взять, чем собрать, что установить", "Настройки одной платы: ядро, загрузчик и таблицу разделов флеш-памяти", "Список пакетов, которые попадут в образ, и порядок их установки на устройство"], "correct": 1, "explain": "Рецепт отвечает за один компонент: SRC_URI говорит, откуда его взять, задачи do_configure, do_compile и do_install — как собрать и куда положить. Состав образа описывает отдельный рецепт образа, а не рецепт компонента.", "usage": {"code": true, "without": "Сборку компонента повторяют руками и каждый раз по-разному.", "with": "SRC_URI = \"git://example/wave-drv.git;protocol=ssh;branch=wlan_master\"\ndo_install() { install -d ${D}${bindir}; }", "benefit": "Компонент собирается одинаково на любой машине и на CI."}}, {"q": "Чем bblayers.conf отличается от local.conf в каталоге сборки?", "options": ["bblayers.conf нужен только для BSP-слоёв, остальные подключаются через require", "bblayers.conf задаёт машину и дистрибутив, а local.conf перечисляет слои сборки", "bblayers.conf генерируется автоматически, а local.conf правят только вручную", "bblayers.conf перечисляет слои, local.conf задаёт настройки этой сборки"], "correct": 3, "explain": "В bblayers.conf лежит переменная BBLAYERS со списком путей к слоям — это ответ на вопрос «откуда брать рецепты». В local.conf задают MACHINE, DISTRO, каталоги кэшей и прочие настройки конкретной сборки.", "usage": {"code": true, "without": "Правят local.conf и удивляются, что рецепт из нового слоя всё ещё не найден.", "with": "# conf/bblayers.conf\nBBLAYERS += \"${TOPDIR}/../meta-wave\"\n# conf/local.conf\nMACHINE ?= \"rdkb-lgm\"", "benefit": "Понятно, какой файл отвечает за состав слоёв, а какой за параметры сборки."}}, {"q": "Что задают MACHINE, DISTRO и рецепт образа?", "options": ["Три уровня оптимизации сборки: по скорости, по размеру и по отладочной информации", "Три источника рецептов: BSP-слой, слой дистрибутива и слой прикладного ПО", "Железо, политику дистрибутива и состав того, что окажется в образе", "Три этапа сборки: настройка, компиляция и упаковка корневой файловой системы"], "correct": 2, "explain": "MACHINE описывает плату: архитектуру, ядро, загрузчик; DISTRO — политику вроде списка DISTRO_FEATURES и системы инициализации; рецепт образа — какие пакеты установить. Три вопроса независимы, поэтому и переменные разные.", "usage": {"code": true, "without": "Настройки платы и политика дистрибутива перемешаны в одном месте.", "with": "MACHINE ?= \"rdkb-lgm\"\nDISTRO ?= \"rdk-broadband\"\nbitbake rdk-generic-broadband-image", "benefit": "Одну и ту же плату можно собрать с разной политикой и разным составом."}}, {"q": "Зачем нужен файл с расширением bbappend?", "options": ["Чтобы объявить новый рецепт, который наследует задачи уже существующего", "Чтобы собрать рецепт дважды: под целевую архитектуру и для сборочного хоста", "Чтобы дописать к рецепту из другого слоя, не копируя и не форкая сам рецепт", "Чтобы отключить рецепт из нижележащего слоя и исключить его из сборки"], "correct": 2, "explain": "bbappend лежит в вашем слое и дополняет рецепт из чужого: добавляет файлы в SRC_URI, патчи, зависимости, дописывает задачи. Форк рецепта целиком пришлось бы сопровождать при каждом обновлении апстрима, а дополнение переживает его.", "usage": {"code": true, "without": "Копируют рецепт в свой слой и ловят расхождение при обновлении апстрима.", "with": "# rdk-wifi-libhostap_%.bbappend\nFILESEXTRAPATHS:prepend := \"${THISDIR}/files:\"\nSRC_URI += \"file://0001-wave-mld-fix.patch\"", "benefit": "Своя правка живёт отдельно от чужого рецепта и переживает его обновление."}}, {"q": "В каталоге сборки лежат tmp, downloads и sstate-cache. Что из этого дешевле всего потерять?", "options": ["Все три равнозначны: любая потеря означает полную пересборку с нуля", "tmp: он пересоздаётся из исходников и кэша готовых результатов задач", "sstate-cache: он хранит только журналы задач и на скорость не влияет", "downloads: исходники всё равно скачиваются заново при каждой сборке"], "correct": 1, "explain": "В tmp лежат рабочие каталоги, sysroot'ы и собранные образы — всё это восстанавливается. downloads хранит скачанные архивы и репозитории, sstate-cache — готовые результаты задач, и именно они экономят часы. Поэтому тест с кэшами и удаляет только tmp.", "usage": {"code": true, "without": "rm -rf tmp sstate-cache downloads   # следующая сборка с нуля, полдня", "with": "rm -rf tmp   # sstate и downloads остаются, сборка поднимается из кэша", "benefit": "Чистая проверка занимает минуты, а не часы."}}, {"q": "Что такое RDK-B?", "options": ["Дистрибутив Linux общего назначения, который развивает сообщество Yocto", "Протокол управления абонентским оборудованием, пришедший на смену TR-069", "Название семейства процессоров, на которых работают домашние маршрутизаторы", "Эталонный стек для широкополосных шлюзов под управлением RDK Management"], "correct": 3, "explain": "RDK — Reference Design Kit, которым управляет RDK Management: совместное предприятие операторов. Ветка B отвечает за широкополосные шлюзы, V — за телевизионные приставки, C — за камеры. Это именно стек поверх Yocto, а не сам дистрибутив и не железо.", "usage": {"code": false, "without": "Каждый оператор пишет прошивку шлюза с нуля и свой набор компонентов.", "with": "Общий стек компонентов и модель данных, а различия — в вендорском и операторском слоях.", "benefit": "Общая часть развивается сообществом, а не переписывается в каждом проекте."}}, {"q": "Два слоя дают рецепт с одним именем и одной версией. Кто победит?\n```\n# meta-rdk-broadband/recipes-ccsp/.../wifi-agent_1.0.bb\n# meta-wave/recipes-ccsp/.../wifi-agent_1.0.bb\n```", "options": ["Слой, чьё имя идёт раньше по алфавиту среди объявленных коллекций сборки", "Оба соберутся: одинаковые имена допустимы, различаются полные пути к файлам", "Слой с большим BBFILE_PRIORITY, объявленным в его conf/layer.conf", "Слой, подключённый в bblayers.conf последним: список читается сверху вниз"], "correct": 2, "explain": "При совпадении имени и версии BitBake берёт рецепт из слоя с большим BBFILE_PRIORITY, объявленным в conf/layer.conf. Порядок строк в bblayers.conf на это не влияет, а при равных приоритетах результат становится непредсказуемым, и BitBake об этом предупреждает.", "usage": {"code": true, "without": "Собирается «не тот» рецепт, и разница видна только по содержимому образа.", "with": "bitbake-layers show-recipes wifi-agent   # видно все слои и что победило\ngrep BBFILE_PRIORITY meta-wave/conf/layer.conf", "benefit": "Понятно, какой файл реально собирается и почему именно он."}}, {"q": "В рецепте встречаются do_install_append и do_install:append. От чего зависит написание?", "options": ["От того, объявлена задача в классе или в рецепте: у классов синтаксис другой", "Обе формы равноценны во всех релизах, это вопрос личного стиля автора", "От типа файла: в bb используется двоеточие, в bbappend — подчёркивание", "От релиза Yocto: двоеточие с kirkstone, подчёркивание на dunfell и раньше"], "correct": 3, "explain": "Синтаксис переопределений сменился: на dunfell и раньше писали do_install_append, начиная с версии 3.4 и kirkstone — do_install:append. Опаснее всего то, что старая форма на новом релизе не ошибка: получается просто функция со странным именем, которая никогда не вызывается.", "usage": {"code": true, "without": "do_install_append() { ... }   # на kirkstone молча не выполняется", "with": "do_install:append() { ... }\nbitbake-getvar -r <recipe> do_install   # проверить собранное тело", "benefit": "Дополнение задачи действительно попадает в сборку."}}, {"q": "Что отличает BSP-слой от остальных?", "options": ["Он подключается не через bblayers.conf, а через require из local.conf", "Он не содержит рецептов: только конфигурацию и патчи для существующих", "Он содержит conf/machine с описаниями плат и поставляет ядро и загрузчик", "Он всегда имеет наивысший приоритет, чтобы перебивать рецепты из oe-core"], "correct": 2, "explain": "BSP-слой отвечает на вопрос «на каком железе»: в conf/machine лежат описания плат, и он же обычно даёт провайдеров для virtual/kernel и загрузчика. Слои дистрибутива несут conf/distro и политику, слои ПО — прикладные рецепты.", "usage": {"code": true, "without": "MACHINE задан, а bitbake сообщает, что такая машина не найдена.", "with": "ls meta-rdk-bsp-*/conf/machine/*.conf\nBBLAYERS += \"${TOPDIR}/../meta-rdk-bsp-lgm\"", "benefit": "Плата описана там, где ей место, и не размазана по общим слоям."}}, {"q": "Что задаёт DISTRO_FEATURES, в отличие от MACHINE_FEATURES?", "options": ["Возможности железа платы, а MACHINE_FEATURES — пожелания сборщика образа", "Список пакетов, которые попадут в образ, тогда как MACHINE_FEATURES задаёт их версии", "Набор включённых слоёв, а MACHINE_FEATURES — набор включённых рецептов", "Политику дистрибутива вроде systemd и поддержки протоколов, независимо от платы"], "correct": 3, "explain": "DISTRO_FEATURES — это политика на весь дистрибутив: система инициализации, поддержка ipv6, wifi и подобное. MACHINE_FEATURES описывает, что умеет железо, а пересечение двух списков даёт COMBINED_FEATURES, по которому рецепты и решают, что собирать.", "usage": {"code": true, "without": "Поддержку протокола включают правкой десятка рецептов по отдельности.", "with": "DISTRO_FEATURES:append = \" systemd\"\nMACHINE_FEATURES += \"wifi\"", "benefit": "Одно решение действует на весь дистрибутив, а не на один рецепт."}}, {"q": "Зачем нужны слои из meta-openembedded?", "options": ["Это слои сборочных хостов: они описывают дистрибутивы, на которых можно собирать", "Это набор слоёв прикладного ПО поверх oe-core: сеть, python, файловые системы", "Это альтернатива poky: либо собираем на нём, либо на poky, но не на обоих сразу", "Это архив устаревших рецептов, вынесенных из oe-core при смене релиза"], "correct": 1, "explain": "meta-openembedded — это зонтичный репозиторий со слоями meta-oe, meta-networking, meta-python и другими. В oe-core держат только базу, а всё прикладное живёт здесь, поэтому такие слои подключают рядом с poky, а не вместо него.", "usage": {"code": true, "without": "Нужный пакет пишут рецептом с нуля, хотя он уже есть в meta-networking.", "with": "BBLAYERS += \"${TOPDIR}/../meta-openembedded/meta-networking\"\nbitbake-layers show-recipes '*hostapd*'", "benefit": "Готовые рецепты переиспользуются вместо написания своих."}}, {"q": "Два рецепта объявляют PROVIDES virtual/kernel. Чем разрешается выбор?", "options": ["Приоритетом слоя: провайдер из слоя с большим BBFILE_PRIORITY выигрывает автоматически", "Порядком разбора: побеждает рецепт, который BitBake разобрал последним", "Ничем: такая ситуация считается ошибкой, и сборка прекращается на разборе", "Переменной PREFERRED_PROVIDER для этого имени, обычно в конфигурации машины"], "correct": 3, "explain": "Виртуальное имя — это точка подмены: несколько рецептов объявляют, что умеют быть ядром, а выбор делает PREFERRED_PROVIDER_virtual/kernel, обычно в conf/machine. Похожим образом PREFERRED_VERSION выбирает версию, когда рецептов несколько.", "usage": {"code": true, "without": "Собирается ядро не от вендора, и модули драйвера не встают.", "with": "PREFERRED_PROVIDER_virtual/kernel = \"linux-lgm\"\nPREFERRED_VERSION_linux-lgm = \"5.15%\"", "benefit": "Ядро выбирается явно, а не по случайности разбора."}}, {"q": "Что означает суффикс -native у рецепта?", "options": ["Рецепт собирается без кросс-компилятора прямо на целевом устройстве", "Рецепт относится к родному слою проекта и не может быть переопределён другими", "Рецепт содержит только исходники на C, без скриптов и интерпретируемых частей", "Рецепт собирается для сборочного хоста и работает на нём во время сборки"], "correct": 3, "explain": "Вариант -native собирается под архитектуру сборочной машины и нужен инструментам, которые запускаются во время сборки: генераторам, упаковщикам, mkimage. Вариант nativesdk предназначен для машины разработчика, куда ставится SDK, а обычный рецепт — для целевого устройства.", "usage": {"code": true, "without": "do_deploy зовёт mkimage с хоста, и на чистой машине сборка падает.", "with": "DEPENDS += \"u-boot-tools-native\"", "benefit": "Инструмент собирается сборкой и не зависит от того, что стоит на хосте."}}, {"q": "Что такое recipe-sysroot в рабочем каталоге рецепта?", "options": ["Каталог с исходниками зависимостей, которые пересобираются вместе с рецептом", "Временный каталог распаковки архива, который удаляется сразу после do_configure", "Копия корневой файловой системы образа, куда рецепт устанавливает свои файлы", "Заголовки и библиотеки зависимостей рецепта под целевую архитектуру"], "correct": 3, "explain": "У каждого рецепта свой sysroot: в recipe-sysroot кладут заголовки и библиотеки зависимостей под целевую архитектуру, в recipe-sysroot-native — инструменты для хоста. Отдельные sysroot'ы на рецепт и делают сборку воспроизводимой: рецепт видит ровно то, что объявил в DEPENDS.", "usage": {"code": true, "without": "Сборка проходит только там, где нужный заголовок случайно остался от соседа.", "with": "DEPENDS += \"openssl\"\nls tmp/work/*/wave-drv/*/recipe-sysroot/usr/include/openssl", "benefit": "Если зависимость не объявлена, сборка честно падает, а не собирается случайно."}}, {"q": "Сборка занимает минуту и пишет про setscene. Что произошло?", "options": ["Результаты задач восстановлены из sstate-кэша вместо повторного выполнения", "Задачи пропущены по штампам: BitBake решил, что они уже выполнялись в этом дереве", "Сборка шла в несколько потоков, поэтому задачи не попали в вывод целиком", "Сборка остановилась на разборе метаданных и до выполнения задач не дошла"], "correct": 0, "explain": "Задачи setscene поднимают готовый результат из sstate-кэша, если подпись входов совпала. Отличие от штампов в tmp принципиально: штампы уходят вместе с tmp, а sstate переживает его удаление — на этом и построен тест с кэшами.", "usage": {"code": true, "without": "Считают, что после rm -rf tmp всё пересобралось с нуля, и делают неверный вывод.", "with": "grep do_deploy_setscene build.log   # видно, что результат поднят из sstate", "benefit": "Понятно, что именно проверила вторая сборка."}}, {"q": "Что произойдёт, если изменить рецепт, от которого зависят другие?", "options": ["Пересоберётся весь образ целиком, так как подписи считаются один раз на сборку", "Изменится подпись задач, и пересоберётся он сам и всё, что от него зависит", "Ничего до явного cleansstate: BitBake сравнивает только даты изменения файлов", "Пересоберётся только сам рецепт: зависимые берут результат из кэша по имени"], "correct": 1, "explain": "BitBake считает подпись каждой задачи по её входам, включая подписи зависимостей. Правка рецепта меняет подпись цепочкой вверх, поэтому пересборка расходится по зависимым автоматически — ради этого флаг nostamp и считается заразным и почти никогда не нужен.", "usage": {"code": true, "without": "После правки рецепта на всякий случай чистят всё дерево и ждут полдня.", "with": "bitbake -S printdiff <image>   # что изменится и почему\nbitbake -c cleansstate <recipe>   # точечно, если подпись не поменялась", "benefit": "Пересобирается ровно то, что зависит от правки."}}, {"q": "Зачем нужен SDK, если есть всё дерево сборки?", "options": ["Он собирает образ быстрее, потому что использует другой, более новый компилятор", "Он даёт кросс-тулчейн и снимок sysroot, чтобы собирать компонент без всего дерева", "Он нужен для подписи образов: без него собранный образ не примет загрузчик платы", "Он заменяет слои: рецепты внутри SDK хранятся в уже разобранном, готовом виде"], "correct": 1, "explain": "SDK отвечает на вопрос «как собрать один компонент, не разворачивая Yocto». В нём кросс-компилятор и sysroot с заголовками и библиотеками целевого образа, поэтому его отдают прикладным разработчикам, у которых нет ни дерева, ни прав на вендорские слои.", "usage": {"code": true, "without": "Правка в одну строку требует полного дерева и часа сборки образа.", "with": "bitbake rdk-generic-broadband-image -c populate_sdk\n. /opt/rdk/environment-setup-aarch64-rdk-linux && make", "benefit": "Компонент собирается за секунды на машине без дерева сборки."}}, {"q": "Чем populate_sdk отличается от populate_sdk_ext?", "options": ["Первый собирает SDK для целевой платы, второй — для сборочного хоста", "Первый работает с образом, второй — с отдельным рецептом, указанным в команде", "Первый даёт тулчейн и sysroot, второй добавляет devtool и собственный sstate", "Первый включает исходники всех компонентов, второй только двоичные библиотеки"], "correct": 2, "explain": "Обычный SDK — это кросс-тулчейн и снимок sysroot образа. Расширенный несёт вдобавок devtool и кусок сборочной системы с заблокированным sstate, поэтому в нём можно менять рецепты и собирать их, но весит он в разы больше.", "usage": {"code": true, "without": "Разработчику нужен devtool, а ему выдали обычный SDK без него.", "with": "bitbake <image> -c populate_sdk       # тулчейн и sysroot\nbitbake <image> -c populate_sdk_ext   # плюс devtool", "benefit": "Выдаётся тот SDK, который подходит под задачу получателя."}}, {"q": "Что делает скрипт environment-setup из SDK?", "options": ["Проверяет совместимость версий и отказывается работать на чужом дистрибутиве", "Распаковывает sysroot в текущий каталог и настраивает права доступа к нему", "Выставляет CC, CXX, флаги и пути к sysroot, чтобы make собирал кросс-компилятором", "Запускает демон сборки, через который команды попадают в кросс-окружение"], "correct": 2, "explain": "Это обычный набор экспортов: CC и CXX указывают на кросс-компилятор, флаги несут --sysroot, а PKG_CONFIG_SYSROOT_DIR разворачивает pkg-config в сторону целевых библиотек. Без него make возьмёт компилятор хоста и соберёт бинарник, который на плате не запустится.", "usage": {"code": true, "without": "make   # собралось компилятором хоста, на плате «cannot execute binary file»", "with": ". /opt/rdk/2.0/environment-setup-aarch64-rdk-linux\necho \"$CC\"   # aarch64-rdk-linux-gcc --sysroot=...", "benefit": "Сборка идёт под целевую архитектуру и против её библиотек."}}, {"q": "Почему нельзя собрать компонент для платы обычным gcc сборочной машины?", "options": ["Можно, если статически слинковать: тогда архитектура значения уже не имеет", "Можно, но бинарник получится медленнее, потому что не учтёт флаги платы", "Архитектура и библиотеки цели другие: нужен кросс-компилятор и sysroot цели", "Нельзя из-за лицензии: gcc хоста запрещено применять для вендорского кода"], "correct": 2, "explain": "У платы другая архитектура процессора и свой набор библиотек и заголовков, поэтому нужен компилятор, который порождает код для цели, и sysroot, где лежат её библиотеки. Статическая линковка проблему архитектуры не решает: инструкции всё равно не те.", "usage": {"code": true, "without": "gcc -o agent agent.c   # бинарник для x86 на плате не запустится", "with": "$CC -o agent agent.c   # CC из environment-setup, sysroot цели", "benefit": "Собранное действительно запускается на устройстве."}}, {"q": "В SDK не хватает заголовков библиотеки, которая есть в образе. Как поступить?", "options": ["Скопировать заголовки с платы в каталог SDK: sysroot для этого и открыт на запись", "Добавить библиотеку в IMAGE_INSTALL: состав SDK повторяет состав образа", "Добавить пакет с заголовками в TOOLCHAIN_TARGET_TASK и пересобрать SDK", "Указать путь к исходникам библиотеки через переменную окружения при сборке"], "correct": 2, "explain": "В sysroot SDK попадает не весь образ, а то, что перечислено в TOOLCHAIN_TARGET_TASK, и обычно это пакеты с суффиксом dev. Ручное копирование с платы даёт рассинхрон: SDK перестаёт соответствовать той сборке, для которой был сделан.", "usage": {"code": true, "without": "cp -r /usr/include/wave root@board:/opt/rdk/sysroots/...   # рассинхрон", "with": "TOOLCHAIN_TARGET_TASK += \"libwave-dev\"\nbitbake <image> -c populate_sdk", "benefit": "SDK соответствует образу, и новые разработчики получают его готовым."}}, {"q": "Разработчик поправил рецепт в слое и ждёт изменений в SDK. Что не так?", "options": ["Правка рецепта в SDK учитывается только после перезапуска скрипта окружения", "Правки рецептов применяются к SDK, но лишь после очистки его кэша sstate", "SDK не читает слои: его sysroot — снимок, сделанный в момент генерации", "SDK берёт рецепты из дерева по пути, записанному в него при установке"], "correct": 2, "explain": "Обычный SDK не содержит ни рецептов, ни метаданных — только тулчейн и готовый снимок sysroot. Любая правка в слое доходит до него лишь через новую генерацию, поэтому SDK устаревает вместе с образом, для которого был собран.", "usage": {"code": true, "without": "Меняют патч в слое и ищут, почему SDK продолжает собирать по-старому.", "with": "bitbake <image> -c populate_sdk   # новый SDK после правок в слоях", "benefit": "Понятно, когда SDK нужно перегенерировать, а когда достаточно пересобрать."}}, {"q": "Что делает devtool modify для рецепта?", "options": ["Открывает рецепт в редакторе и после сохранения проверяет его разбор", "Разворачивает исходники в рабочее пространство и переключает рецепт на них", "Создаёт копию рецепта в вашем слое, чтобы править его независимо от апстрима", "Снимает патчи с рецепта и складывает их в каталог files рядом с ним"], "correct": 1, "explain": "devtool modify выкладывает исходники в workspace как git-репозиторий с наложенными патчами и создаёт bbappend, который заставляет рецепт брать код оттуда. Дальше правки — обычные коммиты, а devtool finish превращает их в патчи в слое.", "usage": {"code": true, "without": "Патч правят вслепую, пересобирая рецепт после каждой попытки.", "with": "devtool modify rdk-wifi-libhostap\n# правки как обычные коммиты\ndevtool build rdk-wifi-libhostap", "benefit": "Цикл правки и сборки идёт по коду, а не по патч-файлу."}}, {"q": "После devtool deploy-target плату перепрошили, и правка исчезла. Почему?", "options": ["deploy-target требует ключа для записи в постоянную память, а он не был указан", "deploy-target ставит файлы во временный раздел, который очищается при перезагрузке", "deploy-target копирует файлы на работающую плату, а не в собираемый образ", "Правка не была закоммичена, поэтому deploy-target скопировал исходное состояние"], "correct": 2, "explain": "deploy-target — это быстрый способ положить собранное на живое устройство по ssh для проверки, и к образу он отношения не имеет. Чтобы правка попала в прошивку, её доводят до слоя через devtool finish и собирают образ заново.", "usage": {"code": true, "without": "Проверили на плате, отчитались, а в следующем образе правки нет.", "with": "devtool deploy-target rdk-wifi-libhostap root@board   # проверка\ndevtool finish rdk-wifi-libhostap meta-wave              # в слой", "benefit": "Быстрая проверка отделена от попадания правки в прошивку."}}, {"q": "Почему в расширенном SDK sstate называют заблокированным?", "options": ["Он привязан к машине установки и перестаёт работать при копировании SDK на другую", "Он зафиксирован подписями той сборки: пересобирается только то, что вы правите", "Он защищён от записи, чтобы разработчик случайно не испортил общий кэш команды", "Он заблокирован лицензией и не может распространяться вместе с вендорским кодом"], "correct": 1, "explain": "Расширенный SDK несёт снимок подписей задач той сборки, из которой сделан: всё, чего вы не трогали, берётся из кэша готовым. Поэтому devtool в нём пересобирает только изменённый рецепт и его зависимых, а не разворачивает сборку с нуля.", "usage": {"code": true, "without": "Ожидают, что SDK пересоберёт образ целиком, и не понимают, откуда скорость.", "with": "devtool build wave-drv   # правленый рецепт, остальное из locked sstate", "benefit": "Цикл правки остаётся быстрым даже на слабой машине разработчика."}}, {"q": "Когда SDK не годится и нужно полное дерево?", "options": ["Когда нужно собрать несколько компонентов сразу: SDK собирает строго по одному", "Когда нужен образ, другая машина или правки рецептов, патчей и конфигурации слоёв", "Когда компонент зависит от внешней библиотеки, которой нет в системе разработчика", "Когда компонент написан на C++, а не на C: SDK собирает только код на C"], "correct": 1, "explain": "SDK покрывает ровно цикл «поправил исходник компонента — собрал — положил на плату». Всё, что меняет саму сборку — рецепты, патчи в слое, конфигурация машины или дистрибутива, сборка образа — требует дерева, потому что этих данных в обычном SDK просто нет.", "usage": {"code": false, "without": "Пытаются собрать образ из SDK и упираются в отсутствие рецептов и слоёв.", "with": "Компонент — в SDK; рецепты, патчи и образ — в дереве сборки.", "benefit": "Задача сразу решается тем инструментом, который для неё предназначен."}}, {"q": "Что такое CCSP в RDK-B?", "options": ["Протокол связи шлюза с облаком оператора, пришедший на смену TR-069", "Слой Yocto, в котором лежат рецепты всех компонентов широкополосного стека", "Формат конфигурационных файлов, из которого собирается прошивка устройства", "Набор компонентов управления и общая платформа, на которой они разговаривают"], "correct": 3, "explain": "CCSP — Common Component Software Platform: набор демонов вроде PandM, PSM и Cr плюс общий способ их взаимодействия через шину. Каждый компонент владеет своим поддеревом модели данных и отвечает на запросы к нему.", "usage": {"code": true, "without": "Каждая подсистема шлюза общается по-своему, через файлы и сигналы.", "with": "ps | grep -i ccsp   # PandM, PSM, Cr и остальные демоны стека", "benefit": "Компоненты заменяются по одному, пока договор по шине не меняется."}}, {"q": "Что такое TR-181 в контексте шлюза?", "options": ["Стандартная модель данных устройства: дерево параметров вида Device.WiFi.Radio", "Стандарт радиоинтерфейса, описывающий работу Wi-Fi в диапазоне шести гигагерц", "Протокол, по которому облако оператора подключается к шлюзу и отдаёт команды", "Формат журналов, в котором компоненты пишут события в общий системный лог"], "correct": 0, "explain": "TR-181 — это словарь: единое дерево параметров, которым описывают устройство. Протоколы вроде TR-069 и WebPA только переносят запросы к этому дереву, а локально по нему ходят через dmcli.", "usage": {"code": true, "without": "Одно и то же значение зовётся по-разному в каждой подсистеме шлюза.", "with": "dmcli eRT getv Device.WiFi.Radio.1.OperatingChannelBandwidth", "benefit": "Облако, локальная отладка и компоненты говорят об одном и том же именем."}}, {"q": "Что делает dmcli на устройстве?", "options": ["Перезапускает демоны стека в правильном порядке после изменения настроек", "Показывает журналы компонентов и фильтрует их по уровню важности сообщения", "Читает и пишет параметры модели данных через шину, как это делает облако", "Скачивает новую прошивку с сервера оператора и проверяет её подпись"], "correct": 2, "explain": "dmcli — это клиент шины: он задаёт компонентам те же вопросы к модели данных, что и облако, только локально. Поэтому им проверяют, кто на самом деле владеет параметром и что отвечает, не дожидаясь запроса с сервера.", "usage": {"code": true, "without": "Чтобы проверить параметр, ждут запроса от облака или читают чужой лог.", "with": "dmcli eRT getv Device.WiFi.SSID.1.SSID\ndmcli eRT setv Device.WiFi.Radio.1.Enable bool true", "benefit": "Поведение проверяется на месте, тем же путём, что и в бою."}}, {"q": "Зачем в RDK-B появилась шина RBUS, если уже была D-Bus?", "options": ["Это собственная шина RDK взамен связки на D-Bus, с упором на скорость и события", "Она заменяет модель данных TR-181 собственным, более компактным деревом", "Она шифрует сообщения между компонентами, что требуется сертификацией оператора", "Это тот же D-Bus с другим именем: переименование понадобилось из-за лицензии"], "correct": 0, "explain": "Исторически компоненты CCSP общались через D-Bus, и на нагрузке это упиралось в производительность. RBUS — собственная шина RDK с той же ролью: перенос запросов к модели данных и событий, поэтому компоненты переезжают на неё постепенно.", "usage": {"code": true, "without": "Частые опросы параметров упираются в шину и тормозят весь стек.", "with": "rbuscli get Device.WiFi.Radio.1.Enable", "benefit": "Обмен быстрее, а подписка на изменения не требует опроса."}}, {"q": "Чем syscfg отличается от sysevent?", "options": ["syscfg работает с сетью, sysevent — с беспроводной частью и радиоинтерфейсами", "syscfg доступен только из C, а sysevent — только из скриптов на shell", "syscfg пишет в оперативную память, sysevent сохраняет значения на флеш-память", "syscfg хранит настройки и переживает перезагрузку, sysevent разносит события"], "correct": 3, "explain": "syscfg — это постоянное хранилище пар ключ-значение, которое переживает перезагрузку. sysevent — рантаймовая шина событий и временных значений: по ней подсистемы узнают, что интерфейс поднялся или адрес получен. Путаница между ними приводит к настройкам, теряющимся после перезагрузки.", "usage": {"code": true, "without": "Настройку кладут в sysevent, и после перезагрузки её нет.", "with": "syscfg set wan_proto dhcp && syscfg commit\nsysevent get current_wan_ipaddr", "benefit": "Постоянное лежит в постоянном хранилище, временное — в событиях."}}, {"q": "Зачем в RDK-B слой HAL с заголовками вида wifi_hal.h?", "options": ["Это набор утилит отладки, которые вендор поставляет вместе с драйвером", "Это договор: RDK объявляет функции, вендор реализует их под своё железо", "Это обёртка над системными вызовами Linux, скрывающая различия версий ядра", "Это заголовки самого драйвера, которые вендор публикует для сторонних программ"], "correct": 1, "explain": "HAL — это и есть граница между общим стеком и вендором: RDK фиксирует набор функций, а SoC-вендор пишет их реализацию под свой чип. Поэтому один и тот же агент Wi-Fi работает на разных чипах, а вендорские различия остаются под HAL.", "usage": {"code": true, "without": "Агент лезет в вендорские вызовы напрямую, и перенос на другой чип невозможен.", "with": "// wifi_hal.h — объявление от RDK\nINT wifi_getRadioOperatingChannelBandwidth(INT radioIndex, CHAR *output);", "benefit": "Стек переносится на новый чип заменой реализации, а не переписыванием."}}, {"q": "Кто что поставляет в типичном проекте RDK-B?", "options": ["Оператор даёт ядро и драйверы, вендор — облачные сервисы, OEM — модель данных", "Всё поставляет RDK Management, а участники только настраивают готовые компоненты", "SoC-вендор даёт BSP, драйверы и HAL; OEM — плату; оператор — слой и облако", "SoC-вендор даёт компоненты CCSP, OEM — реализацию HAL, оператор — ядро и загрузчик"], "correct": 2, "explain": "Границы примерно такие: производитель чипа отвечает за BSP, ядро, драйверы, прошивку радио и реализацию HAL; OEM собирает плату и доводит её; оператор добавляет свою политику, брендирование и связь с облаком. Общий стек компонентов приходит из RDK.", "usage": {"code": false, "without": "Дефект отправляют не тому участнику и теряют недели на переадресацию.", "with": "Симптом сводят к слою: HAL и драйвер — к вендору, агент и модель данных — к стеку RDK.", "benefit": "Задача сразу уходит тому, кто владеет кодом."}}, {"q": "Чем WebPA отличается от TR-069 для шлюза?", "options": ["Это два пути до одной модели данных: разные протоколы и разные серверы", "WebPA работает только в локальной сети, а TR-069 — через интернет до сервера", "WebPA задаёт модель данных, а TR-069 только переносит её по сети до сервера", "WebPA заменил TR-069 полностью, и старый протокол в RDK-B больше не поддерживается"], "correct": 0, "explain": "И то и другое — транспорт до одного и того же дерева TR-181: классический TR-069 работает с сервером автоконфигурации, WebPA — более новый путь со стороны облака оператора. Модель данных при этом общая, поэтому локально оба проверяются одним dmcli.", "usage": {"code": true, "without": "Разбор «облако не видит параметр» начинают с протокола, а не с модели данных.", "with": "dmcli eRT getv Device.WiFi.SSID.1.SSID   # сначала локально, потом транспорт", "benefit": "Сразу видно, проблема в параметре или в канале до облака."}}, {"q": "Почему дерево исходников RDK-B выкачивают через repo и манифест?", "options": ["Так требует BitBake: он читает манифест вместо файла bblayers.conf сборки", "Так исходники скачиваются быстрее, чем обычным клоном одного репозитория", "Дерево состоит из десятков репозиториев, и манифест фиксирует их набор и ревизии", "Так проект защищает исходники: без манифеста доступ к репозиториям закрыт"], "correct": 2, "explain": "Стек собран из множества отдельных репозиториев: слои, компоненты, BSP. Манифест перечисляет, какой репозиторий куда лечь и на какой ревизии, поэтому сборка воспроизводима, а версия всего дерева описывается одним файлом.", "usage": {"code": true, "without": "Каждый клонирует репозитории вручную и получает своё сочетание ревизий.", "with": "repo init -u <manifest-url> -m <manifest.xml> -b <branch>\nrepo sync -j8", "benefit": "У всех одинаковое дерево, а версия сборки — это ревизия манифеста."}}, {"q": "Для чего в дереве RDK-B отдельные слои meta-rdk-broadband и meta-rdk-bsp-<soc>?", "options": ["Первый нужен для сборки на хосте, второй подключается только при сборке образа", "Первый содержит рецепты, второй — только патчи к ним от производителя чипа", "Это две версии одного слоя: вторая заменяет первую на вендорских платформах", "Первый несёт общие компоненты стека, второй — платформенную часть от вендора"], "correct": 3, "explain": "Разделение повторяет границы ответственности: общая часть широкополосного стека живёт в слоях RDK, платформенное — ядро, драйверы, прошивка, реализация HAL — в BSP-слое вендора. Правки в вендорскую часть идут в вендорский слой, а не в общий.", "usage": {"code": true, "without": "Правку под свой чип кладут в общий слой, и она мешает остальным платформам.", "with": "bitbake-layers show-layers   # видно, какой слой откуда и с каким приоритетом", "benefit": "Каждая правка живёт в слое того, кто за неё отвечает."}}, {"q": "Нужно поправить исходник вендорского компонента, который рецепт тянет из git. Куда положить правку?", "options": ["Скопировать рецепт в свой слой и поправить исходник в его SRC_URI", "Править файл прямо в tmp/work и пересобрать рецепт с ключом force", "Патч в files рядом с bbappend, строка в SRC_URI и FILESEXTRAPATHS", "Поднять ветку в вендорском репозитории и переключить на неё SRC_URI рецепта"], "correct": 2, "explain": "Шаг 1: рабочий каталог tmp/work пересоздаётся, правка там живёт до первой чистки. Шаг 2: копия рецепта в своём слое означает вечное сопровождение чужого файла. Шаг 3: остаётся bbappend — патч кладут в files рядом, добавляют в SRC_URI и открывают путь через FILESEXTRAPATHS, тогда правка переживёт обновление апстрима.", "usage": {"code": true, "without": "vi tmp/work/.../wave-drv/git/drv.c && bitbake wave-drv -f -c compile", "with": "# meta-wave/.../wave-drv_%.bbappend\nFILESEXTRAPATHS:prepend := \"${THISDIR}/files:\"\nSRC_URI += \"file://0001-fix-rtlog-buffer.patch\"", "benefit": "Правка воспроизводима на любой машине и переживает чистку дерева."}}, {"q": "Добавили bbappend, но патч не применяется. Как быстро понять причину?", "options": ["Очистить sstate для рецепта: bbappend применяется только после полной пересборки", "Поднять приоритет своего слоя: без этого дополнения из него не читаются", "Проверить, видит ли BitBake дополнение, и сверить версию в его имени", "Переименовать патч так, чтобы он шёл первым по алфавиту среди файлов в SRC_URI"], "correct": 2, "explain": "Шаг 1: спрашиваем BitBake, какие дополнения он вообще нашёл, — bitbake-layers show-appends. Шаг 2: если вашего в списке нет, почти всегда виновата версия в имени файла: wave-drv_1.2.bbappend не подойдёт к рецепту версии 1.3. Шаг 3: лечится шаблоном с процентом в имени, а приоритет слоя тут вообще ни при чём.", "usage": {"code": true, "without": "wave-drv_1.2.bbappend   # рецепт уже 1.3, дополнение молча не применяется", "with": "mv wave-drv_1.2.bbappend wave-drv_%.bbappend\nbitbake-layers show-appends wave-drv", "benefit": "Дополнение переживает обновление версии рецепта."}}, {"q": "Есть подозрение, что собирается рецепт не из вашего слоя. Как это проверить?", "options": ["Найти рецепт по имени и посмотреть, из каких слоёв он есть и какой выбран", "Посмотреть порядок строк в bblayers.conf: побеждает последний из списка", "Сравнить даты изменения файлов рецептов: BitBake берёт более свежий", "Удалить рецепт из чужого слоя: при двух одинаковых сборка всё равно не пойдёт"], "correct": 0, "explain": "Шаг 1: спрашиваем, сколько слоёв дают этот рецепт, — bitbake-layers show-recipes даёт список и помечает выбранный. Шаг 2: если победил чужой, смотрим BBFILE_PRIORITY в conf/layer.conf обоих слоёв. Шаг 3: правим приоритет или версию, а не удаляем чужой файл — он вернётся при следующей синхронизации дерева.", "usage": {"code": true, "without": "Гадают по путям и правят файл, который в сборке не участвует.", "with": "bitbake-layers show-recipes wave-drv\nbitbake-getvar -r wave-drv FILE", "benefit": "Видно точный файл, который участвует в сборке."}}, {"q": "В образе нашёлся незнакомый файл. Как узнать, откуда он взялся?", "options": ["Посмотреть владельца и права файла: они указывают на слой, откуда он пришёл", "Поискать имя файла по всем слоям обычным grep — рецепт обязательно упомянет его", "Сравнить образ с предыдущим: лишний файл всегда приходит с последним изменением", "Найти пакет по пути файла, а затем рецепт, из которого этот пакет собран"], "correct": 3, "explain": "Шаг 1: путь файла переводим в имя пакета через oe-pkgdata-util find-path. Шаг 2: по имени пакета находим рецепт — у пакетов и рецептов имена часто различаются из-за PACKAGES. Шаг 3: дальше смотрим, каким слоем этот рецепт дан. Поиск по grep не сработает: файл мог прийти из архива или сгенерироваться при сборке.", "usage": {"code": true, "without": "grep -r 'rtlog.conf' meta-*   # тишина, файл генерируется задачей", "with": "oe-pkgdata-util find-path /etc/rtlog.conf\noe-pkgdata-util lookup-recipe <package>", "benefit": "Источник файла находится за две команды вместо перебора слоёв."}}, {"q": "Радио не поднимается. dmcli на параметр отвечает, но канал не применяется. Куда смотреть дальше?", "options": ["Вниз от агента: в реализацию HAL и драйвер, раз запрос до стека дошёл", "В транспорт до облака: TR-069 и WebPA применяют параметры разными путями", "В облако: локальный ответ ничего не значит, применение идёт со стороны сервера", "В модель данных: раз параметр читается, ошибка в его описании и типе"], "correct": 0, "explain": "Шаг 1: ответ dmcli означает, что шина и компонент живы, запрос до владельца параметра дошёл. Шаг 2: значит граница сместилась ниже — в реализацию HAL и драйвер, то есть в вендорскую часть. Шаг 3: там и проверяем: лог задачи и лог драйвера, поток прошивки, состояние интерфейса. Облако на этом этапе вообще ни при чём.", "usage": {"code": true, "without": "Пишут в поддержку облака, хотя запрос не доходит даже до драйвера.", "with": "dmcli eRT setv Device.WiFi.Radio.1.Channel uint 36   # дошло до стека\ndmesg -T | grep -i iwlwav                               # смотрим ниже HAL", "benefit": "Дефект уходит тому, кто владеет кодом на нужном уровне."}}, {"q": "Поправили рецепт, запустили сборку — BitBake говорит, что делать нечего. Что дальше?", "options": ["Добавить рецепту флаг nostamp, чтобы он пересобирался при каждом запуске", "Сравнить подписи задач и посмотреть, что именно изменилось в сборке", "Удалить tmp целиком: только полная пересборка подхватывает правки рецептов", "Поднять версию рецепта: BitBake реагирует только на изменение номера версии"], "correct": 1, "explain": "Шаг 1: BitBake сравнивает подписи задач, поэтому «делать нечего» означает, что подпись не изменилась — правка не влияет на вход задачи или лежит не в том файле. Шаг 2: bitbake -S printdiff показывает, что поменялось и почему. Шаг 3: точечно помогает cleansstate для этого рецепта, а nostamp заразен и сносить tmp ради одной правки не нужно.", "usage": {"code": true, "without": "rm -rf tmp && bitbake <image>   # полдня ради одной правки", "with": "bitbake -S printdiff <recipe>\nbitbake -c cleansstate <recipe> && bitbake <recipe>", "benefit": "Причина находится за минуту, а пересборка остаётся точечной."}}, {"q": "Прикладному разработчику выдали SDK, а нужной библиотеки в нём нет. Как закрыть вопрос правильно?", "options": ["Отдать ему всё дерево сборки: SDK для таких задач не предназначен в принципе", "Добавить пакет с заголовками в состав SDK и выдать заново сгенерированный SDK", "Попросить собрать библиотеку у себя из исходников и положить рядом с проектом", "Скопировать заголовки и библиотеку с платы в sysroot установленного SDK"], "correct": 1, "explain": "Шаг 1: состав sysroot задаёт TOOLCHAIN_TARGET_TASK, а не образ целиком, поэтому пакета там просто нет. Шаг 2: добавляем нужный пакет с заголовками в эту переменную. Шаг 3: пересобираем SDK через populate_sdk и раздаём новый — ручное копирование с платы разводит SDK и образ, и следующий разработчик наступит на то же место.", "usage": {"code": true, "without": "scp root@board:/usr/lib/libwave.so /opt/rdk/sysroots/.../usr/lib/", "with": "TOOLCHAIN_TARGET_TASK += \"libwave-dev\"\nbitbake <image> -c populate_sdk", "benefit": "SDK соответствует образу, и правка работает для всей команды."}}, {"q": "bitbake сообщает, что машина не найдена, хотя MACHINE задан верно. С чего начать?", "options": ["Проверить DISTRO: без совпадения дистрибутива машина считается неизвестной", "Пересобрать кэш разбора: описания машин читаются только при первом запуске", "Проверить, подключён ли слой с описанием этой платы в bblayers.conf", "Указать полный путь к файлу машины прямо в переменной MACHINE в local.conf"], "correct": 2, "explain": "Шаг 1: описание платы — это файл conf/machine в BSP-слое, и BitBake ищет его только по подключённым слоям. Шаг 2: значит проверяем BBLAYERS и наличие самого файла в дереве. Шаг 3: если слой подключён, а файла нет, дерево синхронизировано не полностью — вопрос к манифесту, а не к local.conf.", "usage": {"code": true, "without": "Правят имя машины в local.conf наугад, перебирая варианты написания.", "with": "ls ../meta-*/conf/machine/*.conf\nbitbake-layers show-layers", "benefit": "Видно, какие машины вообще доступны в этом дереве."}}, {"q": "Поведение нужно изменить только на одной платформе, рецепт общий для трёх. Как сделать?", "options": ["Скопировать рецепт в вендорский слой и править копию только для своей платформы", "Поправить общий рецепт и добавить в него проверку имени машины внутри задачи", "Собрать отдельный образ для этой платформы и править рецепт перед каждой сборкой", "Добавить дополнение с переопределением по машине, оставив общий рецепт нетронутым"], "correct": 3, "explain": "Шаг 1: правка общего рецепта задевает все три платформы, даже если внутри стоит проверка — читать и сопровождать такой рецепт тяжело. Шаг 2: механизм для этого встроенный — переопределения по MACHINE или DISTRO в bbappend вашего слоя. Шаг 3: копия рецепта хуже всего: она разойдётся с оригиналом при первом же обновлении.", "usage": {"code": true, "without": "do_install:append() { if [ \"${MACHINE}\" = rdkb-lgm ]; then ...; fi }", "with": "# meta-wave/.../agent_%.bbappend\nEXTRA_OECONF:append:rdkb-lgm = \" --enable-wave-rtlog\"", "benefit": "Другие платформы не меняются, а различие видно в одной строке."}}, {"q": "Нужно проверить правку в своём компоненте на плате как можно быстрее. Порядок действий?", "options": ["Отправить правку в слой и дождаться, пока её соберёт ночная сборка на CI", "Собрать компонент в SDK или через devtool, положить на живую плату и проверить", "Собрать образ целиком, прошить плату и проверить правку на свежей прошивке", "Собрать компонент компилятором хоста и скопировать бинарник на плату по ssh"], "correct": 1, "explain": "Шаг 1: для цикла проверки нужен только ваш компонент, а сборка образа и прошивка — это десятки минут. Шаг 2: собираем его в SDK или через devtool build и кладём на работающую плату. Шаг 3: помним, что это проверка, а не доставка: в прошивку правка попадает только через слой и сборку образа, а бинарник от компилятора хоста на плате просто не запустится.", "usage": {"code": true, "without": "Полная сборка образа и перепрошивка ради проверки одной строки.", "with": "devtool build wave-drv\ndevtool deploy-target wave-drv root@board   # проверка на живой плате", "benefit": "Цикл проверки — минуты, а доставка в прошивку идёт своим путём."}}];
+  const STORAGE_KEY = "learntest_" + TEST_ID;
+  const BLOCK_NAMES = [
+    "Теоретический фундамент",
+    "Углублённая теория",
+    "Анализ и проектирование",
+    "Синтез и кейсы",
+    "Практика и расчёты"
+  ];
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return { current: 0, answers: {} };
+  }
+  function saveState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  // Fisher-Yates shuffle (returns a new array, does not mutate input)
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+    }
+    return a;
+  }
+
+  // Builds a fresh, randomized copy of QUESTIONS: each question's options are
+  // shuffled and its correct-answer index remapped to match. Every other field
+  // (q, explain, usage, ...) is carried over untouched. Regenerated on every
+  // page load and on every "reset progress" click (never persisted), so the
+  // position of the correct answer can't be memorized across attempts.
+  function buildShuffledQuestions() {
+    return QUESTIONS.map(q => {
+      const order = shuffle(q.options.map((_, i) => i));
+      return Object.assign({}, q, {
+        options: order.map(i => q.options[i]),
+        correct: order.indexOf(q.correct)
+      });
+    });
+  }
+
+  let state = loadState();
+  let SHUFFLED = buildShuffledQuestions();
+
+  const quizArea = document.getElementById("quizArea");
+  const resultArea = document.getElementById("resultArea");
+  const progressFill = document.getElementById("progressFill");
+  const progressText = document.getElementById("progressText");
+  const blockLabel = document.getElementById("blockLabel");
+
+  function blockOf(idx) { return Math.floor(idx / 10); }
+
+  function render() {
+    if (state.current >= QUESTIONS.length) {
+      renderResult();
+      return;
+    }
+    resultArea.style.display = "none";
+    quizArea.style.display = "block";
+
+    const idx = state.current;
+    const q = SHUFFLED[idx];
+    const answered = state.answers[idx];
+
+    progressFill.style.width = Math.round((idx / QUESTIONS.length) * 100) + "%";
+    progressText.textContent = (idx + 1) + " / " + QUESTIONS.length;
+    blockLabel.textContent = "Блок " + (blockOf(idx) + 1) + ": " + BLOCK_NAMES[blockOf(idx)];
+
+    let html = '<div class="card">';
+    html += '<div class="question">' + renderQuestion(q.q) + '</div>';
+    html += '<div class="qsearch"><a class="iconbtn" target="_blank" rel="noopener" href="https://www.google.com/search?q=' + encodeURIComponent(questionSearchText(q.q)) + '">🔍 Найти в Google</a></div>';
+    html += '<div class="options">';
+    q.options.forEach((opt, i) => {
+      let cls = "opt";
+      if (answered) {
+        cls += " disabled";
+        if (i === q.correct) cls += " correct";
+        else if (opt === answered.selectedText && !answered.correct) cls += " wrong";
+        else cls += " dim";
+      }
+      html += '<button class="' + cls + '" data-i="' + i + '">' + renderOption(opt) + '</button>';
+    });
+    html += '</div>';
+    html += '<div class="explain' + (answered ? ' show' : '') + '" id="explainBox">' + escapeHtml(q.explain || "") + '</div>';
+    if (q.usage) {
+      const u = q.usage;
+      const wrap = (s) => u.code ? ('<pre>' + escapeHtml(s || "") + '</pre>') : ('<div class="u-text">' + escapeHtml(s || "") + '</div>');
+      html += '<div class="usage' + (answered ? ' show' : '') + '">';
+      html += '<div class="u-part u-without"><div class="u-label">Без этого</div>' + wrap(u.without) + '</div>';
+      html += '<div class="u-part u-with"><div class="u-label">С этим</div>' + wrap(u.with) + '</div>';
+      if (u.benefit) html += '<div class="u-benefit">✅ Выгода: ' + escapeHtml(u.benefit) + '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+    html += '<div class="nav">';
+    html += '<button class="btn secondary" id="prevBtn"' + (idx === 0 ? ' disabled' : '') + '>Назад</button>';
+    html += '<button class="btn" id="nextBtn"' + (answered ? '' : ' disabled') + '>' + (idx === QUESTIONS.length - 1 ? 'Завершить' : 'Далее') + '</button>';
+    html += '</div>';
+
+    quizArea.innerHTML = html;
+
+    quizArea.querySelectorAll(".opt").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (state.answers[idx]) return;
+        const sel = parseInt(btn.dataset.i, 10);
+        state.answers[idx] = { selectedText: q.options[sel], correct: sel === q.correct };
+        saveState();
+        render();
+      });
+    });
+    document.getElementById("prevBtn").addEventListener("click", () => {
+      state.current = Math.max(0, idx - 1);
+      saveState();
+      render();
+    });
+    document.getElementById("nextBtn").addEventListener("click", () => {
+      state.current = idx + 1;
+      saveState();
+      render();
+    });
+  }
+
+  function renderResult() {
+    quizArea.style.display = "none";
+    resultArea.style.display = "block";
+    progressFill.style.width = "100%";
+    progressText.textContent = QUESTIONS.length + " / " + QUESTIONS.length;
+    blockLabel.textContent = "Тест завершён";
+
+    let correct = 0;
+    const blockStats = [0, 0, 0, 0, 0];
+    const blockTotals = [0, 0, 0, 0, 0];
+    QUESTIONS.forEach((q, i) => {
+      const b = blockOf(i);
+      blockTotals[b]++;
+      if (state.answers[i] && state.answers[i].correct) {
+        correct++;
+        blockStats[b]++;
+      }
+    });
+
+    let html = '<div class="card result">';
+    html += '<div class="score">' + correct + ' / ' + QUESTIONS.length + '</div>';
+    html += '<div style="color:var(--muted); margin-top:6px;">правильных ответов</div>';
+    html += '<div class="blockscores">';
+    BLOCK_NAMES.forEach((name, i) => {
+      html += '<div class="row"><span>' + (i + 1) + '. ' + name + '</span><span>' + blockStats[i] + ' / ' + blockTotals[i] + '</span></div>';
+    });
+    html += '</div></div>';
+    html += '<div class="nav"><button class="btn" id="reviewBtn">Пересмотреть ответы</button></div>';
+    resultArea.innerHTML = html;
+
+    document.getElementById("reviewBtn").addEventListener("click", () => {
+      state.current = 0;
+      render();
+    });
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s == null ? "" : s;
+    return div.innerHTML;
+  }
+
+  // Текст вопроса может нести фрагменты кода в тройных кавычках: они идут в
+  // <pre> моноширинным шрифтом, остальное — как обычный текст. Вопрос без
+  // тройных кавычек рендерится ровно как раньше.
+  function renderQuestion(text) {
+    const parts = String(text == null ? "" : text).split("```");
+    let out = "";
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 1) out += '<pre class="qcode">' + escapeHtml(parts[i].replace(/^\n/, "").replace(/\n$/, "")) + '</pre>';
+      else if (parts[i]) out += escapeHtml(parts[i]);
+    }
+    return out;
+  }
+
+  // Поиск в Google — по тексту вопроса без фрагментов кода.
+  function questionSearchText(text) {
+    const parts = String(text == null ? "" : text).split("```");
+    return parts.filter(function (_, i) { return i % 2 === 0; }).join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  // Вариант ответа целиком в обратных кавычках — это код, моноширинно.
+  function renderOption(opt) {
+    const s = String(opt == null ? "" : opt);
+    if (s.length > 2 && s.charAt(0) === "`" && s.charAt(s.length - 1) === "`") {
+      return '<code class="optcode">' + escapeHtml(s.slice(1, -1)) + '</code>';
+    }
+    return escapeHtml(s);
+  }
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    if (confirm("Сбросить весь прогресс этого теста?")) {
+      state = { current: 0, answers: {} };
+      SHUFFLED = buildShuffledQuestions();
+      saveState();
+      render();
+    }
+  });
+
+  render();
+
+  // ---- Синхронизация всех тестов (Google Drive), общий модуль sync.js ----
+  const toastEl = document.getElementById("toast");
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    setTimeout(() => toastEl.classList.remove("show"), 2500);
+  }
+
+  const syncModal = document.getElementById("syncModal");
+  const syncStatus = document.getElementById("syncStatus");
+  const uploadBtn = document.getElementById("syncUploadBtn");
+  const downloadBtn = document.getElementById("syncDownloadBtn");
+
+  function setBusy(busy) { uploadBtn.disabled = busy; downloadBtn.disabled = busy; }
+
+  document.getElementById("syncBtn").addEventListener("click", () => {
+    if (!window.LTSync || !LTSync.configured()) {
+      toast("Синхронизация не настроена: укажите GOOGLE_CLIENT_ID в config.js");
+      return;
+    }
+    syncStatus.textContent = LTSync.hasToken()
+      ? "Google уже подключён — вход не потребуется."
+      : "Один вход — синхронизируются сразу все тесты.";
+    syncModal.classList.add("show");
+  });
+  document.getElementById("syncCloseBtn").addEventListener("click", () => syncModal.classList.remove("show"));
+
+  uploadBtn.addEventListener("click", () => {
+    setBusy(true);
+    syncStatus.textContent = "Отправка…";
+    LTSync.uploadAll({
+      onProgress: (d, t) => { syncStatus.textContent = "Отправка… " + d + "/" + t; },
+      onDone: (ok, failed) => {
+        setBusy(false);
+        toast(failed ? ("Отправлено " + ok + ", ошибок: " + failed) : ("Отправлено тестов: " + ok));
+        syncModal.classList.remove("show");
+      },
+      onError: (msg) => { setBusy(false); toast(msg); syncStatus.textContent = msg; }
+    });
+  });
+
+  downloadBtn.addEventListener("click", () => {
+    if (!confirm("Заменить локальный прогресс всех тестов данными из Drive?")) return;
+    setBusy(true);
+    syncStatus.textContent = "Загрузка…";
+    LTSync.downloadAll({
+      onProgress: (d, t) => { syncStatus.textContent = "Загрузка… " + d + "/" + t; },
+      onDone: (ok, failed) => {
+        setBusy(false);
+        state = loadState();
+        render();
+        toast(failed ? ("Загружено " + ok + ", ошибок: " + failed) : ("Загружено тестов: " + ok));
+        syncModal.classList.remove("show");
+      },
+      onError: (msg) => { setBusy(false); toast(msg); syncStatus.textContent = msg; }
+    });
+  });
+})();
+</script>
+</body>
+</html>
