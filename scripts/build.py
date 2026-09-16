@@ -66,6 +66,10 @@ TOPICS = {
         "title": "Shell best practices: POSIX sh, BitBake, ревью",
         "sim": "",
     },
+    "rdkb_yocto_arch": {
+        "title": "Архитектура RDK-B: Yocto, слои, SDK, вендор",
+        "sim": "",
+    },
 }
 
 
