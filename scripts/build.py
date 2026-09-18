@@ -29,6 +29,12 @@ TOPICS = {
     "tiktok_algorithm": {"title": "TikTok: алгоритмы рекомендаций", "sim": "tiktok_algorithm"},
     "visual_math": {"title": "Визуальное объяснение математических концепций", "sim": "visual_math"},
     "cpu_pipeline": {"title": "Конвейер команд и параллелизм (ILP)", "sim": ""},
+    "is1_introduction": {"title": "IS1: Введение в ИИ (лекции 1–2, история, Тьюринг)", "sim": ""},
+    "is1_machine_learning": {"title": "IS1: Введение в машинное обучение и оценка моделей", "sim": ""},
+    "is1_neural_networks": {"title": "IS1: Искусственные нейронные сети", "sim": ""},
+    "is1_evolutionary_algorithms": {"title": "IS1: Эволюционные алгоритмы (GA и GP)", "sim": ""},
+    "is1_artificial_agents": {"title": "IS1: Искусственные агенты", "sim": ""},
+    "is1_responsible_ai": {"title": "IS1: Заключительная лекция — лучшие практики и Responsible AI", "sim": ""},
 }
 
 
