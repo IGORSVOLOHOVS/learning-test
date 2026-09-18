@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>devtool: рецепт, патчи и исходники</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d29; --text: #eef0f6; --muted: #8b8fa3;
+    --accent: #5b8cff; --good: #2fbf71; --bad: #ef5350; --warn: #e0a33e;
+    --border: #2a2e3d; --term: #05060a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.15rem; margin: 14px 0 4px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 14px; line-height: 1.5; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 12px; }
+  .card h2 { font-size: .82rem; margin: 0 0 10px; color: var(--muted); font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em; }
+  pre { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .78rem; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .term { background: var(--term); border-radius: 10px; padding: 12px; max-height: 260px; overflow-y: auto; }
+  .term .cmd { color: var(--accent); }
+  .term .ok { color: var(--good); }
+  .term .warn { color: var(--warn); }
+  .term .err { color: var(--bad); }
+  .term .dim { color: var(--muted); }
+  .step-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .step-row button { flex: 1 1 auto; min-width: 130px; padding: 12px 10px; border-radius: 12px;
+    border: 1px solid var(--border); background: #232838; color: var(--text); font-size: .85rem; cursor: pointer;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .step-row button.primary { background: var(--accent); color: #fff; border: none; font-weight: 600; }
+  .step-row button.danger { border-color: #5a2c2c; color: #ffb3b0; }
+  .step-row button:disabled { opacity: .35; cursor: not-allowed; }
+  .explain { margin-top: 10px; font-size: .85rem; color: #c7cadb; line-height: 1.55; }
+  .explain b { color: var(--text); }
+  .panes { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .pill { display: inline-block; font-size: .7rem; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+  .pill.on { color: var(--good); border-color: #24603f; }
+  .pill.off { color: var(--muted); }
+  .empty { color: var(--muted); font-style: italic; }
+  .progress { display: flex; gap: 4px; margin-top: 12px; }
+  .progress span { flex: 1; height: 4px; border-radius: 2px; background: var(--border); }
+  .progress span.done { background: var(--accent); }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80;
+      --border: #e3e5ee; --term: #12141c; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <a class="back" href="../tests/yocto_bitbake_devtool.html">&larr; Тест по теме</a>
+    <a class="back" href="../index.html">Все тесты</a>
+  </div>
+
+  <h1>devtool: что происходит с рецептом, патчами и кодом</h1>
+  <div class="subtitle">
+    Нажимайте команды по порядку и смотрите, как меняются три вещи сразу:
+    рецепт в слое, история git в рабочем пространстве и файлы патчей.
+    Главный вопрос лаборатории — <b>в какой момент правка попадает в продукт</b>.
+  </div>
+
+  <div class="progress" id="progress"></div>
+
+  <div class="card">
+    <h2>Терминал</h2>
+    <pre class="term" id="term"></pre>
+    <div class="step-row" id="buttons"></div>
+    <div class="explain" id="explain"></div>
+  </div>
+
+  <div class="panes">
+    <div class="card">
+      <h2>Рецепт в слое meta-vendor <span class="pill" id="pillRecipe">исходный</span></h2>
+      <pre id="recipe"></pre>
+    </div>
+
+    <div class="card">
+      <h2>Рабочее пространство <span class="pill off" id="pillWs">пусто</span></h2>
+      <pre id="ws"></pre>
+    </div>
+
+    <div class="card">
+      <h2>Что где оказалось</h2>
+      <pre id="where"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- состояние -----------------------------------------------------------
+  var S;
+
+  function reset() {
+    S = {
+      step: 0,
+      wsActive: false,       // компонент в workspace
+      commits: [],           // история git в workspace
+      dirty: false,          // есть несохранённые правки в дереве
+      built: false,          // devtool build выполнен
+      deployed: false,       // файлы уехали на устройство
+      layerPatches: ["0001-increase-scan-timeout.patch"],
+      inImage: ["0001-increase-scan-timeout.patch"], // что реально попадёт в образ
+      onDevice: [],          // что лежит на живом устройстве поверх образа
+      log: [],
+      finished: false,
+      wasReset: false
+    };
+  }
+
+  // ---- вывод ---------------------------------------------------------------
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function say(cls, text) { S.log.push({ cls: cls, text: text }); }
+
+  function renderTerm() {
+    var el = document.getElementById("term");
+    if (!S.log.length) {
+      el.innerHTML = '<span class="dim">Нажмите первую команду ниже.</span>';
+      return;
+    }
+    el.innerHTML = S.log.map(function (l) {
+      return '<span class="' + l.cls + '">' + esc(l.text) + "</span>";
+    }).join("\n");
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function renderRecipe() {
+    var lines = [];
+    lines.push('SUMMARY = "Демон точки доступа"');
+    lines.push('LICENSE = "BSD-3-Clause"');
+    lines.push("");
+    lines.push('SRC_URI = "git://w1.fi/hostap.git;branch=main \\');
+    S.layerPatches.forEach(function (p, i) {
+      var tail = (i === S.layerPatches.length - 1) ? '"' : " \\";
+      lines.push("           file://" + p + tail);
+    });
+    lines.push("");
+    lines.push("# файлы в слое:");
+    lines.push("#   meta-vendor/recipes-connectivity/hostapd/files/");
+    S.layerPatches.forEach(function (p) { lines.push("#     " + p); });
+    document.getElementById("recipe").textContent = lines.join("\n");
+
+    var pill = document.getElementById("pillRecipe");
+    if (S.layerPatches.length > 1) {
+      pill.textContent = S.layerPatches.length + " патча в слое";
+      pill.className = "pill on";
+    } else {
+      pill.textContent = "1 патч в слое";
+      pill.className = "pill";
+    }
+  }
+
+  function renderWs() {
+    var el = document.getElementById("ws");
+    var pill = document.getElementById("pillWs");
+    if (!S.wsActive) {
+      el.innerHTML = '<span class="empty">Компонента в рабочем пространстве нет.\nСборка идёт по рецепту из слоя.</span>';
+      pill.textContent = "пусто";
+      pill.className = "pill off";
+      return;
+    }
+    var lines = [];
+    lines.push("build/workspace/sources/hostapd");
+    lines.push("");
+    lines.push("$ git log --oneline");
+    for (var i = S.commits.length - 1; i >= 0; i--) {
+      lines.push("  " + S.commits[i]);
+    }
+    lines.push("  a1b2c3d (апстрим) release 2.11");
+    if (S.dirty) {
+      lines.push("");
+      lines.push("$ git status --short");
+      lines.push("   M src/ap/hostapd.c   <- правка не закоммичена");
+    }
+    el.textContent = lines.join("\n");
+    pill.textContent = S.commits.length + " коммит(ов) поверх апстрима";
+    pill.className = "pill on";
+  }
+
+  function renderWhere() {
+    var lines = [];
+    lines.push("В образе прошивки:");
+    if (!S.inImage.length) lines.push("  (пусто)");
+    S.inImage.forEach(function (p) { lines.push("  " + p); });
+    lines.push("");
+    lines.push("На живом устройстве поверх образа:");
+    if (!S.onDevice.length) lines.push("  (ничего не доставлено)");
+    S.onDevice.forEach(function (p) { lines.push("  " + p); });
+    lines.push("");
+    lines.push("Переживёт перепрошивку: только то, что в образе.");
+    document.getElementById("where").textContent = lines.join("\n");
+  }
+
+  function renderProgress() {
+    var el = document.getElementById("progress");
+    el.innerHTML = "";
+    for (var i = 0; i < 6; i++) {
+      var s = document.createElement("span");
+      if (i < S.step) s.className = "done";
+      el.appendChild(s);
+    }
+  }
+
+  // ---- шаги ----------------------------------------------------------------
+  var STEPS = [
+    {
+      label: "devtool modify hostapd",
+      explain: "<b>Что произошло.</b> devtool достал исходники апстрима и превратил каждый патч из SRC_URI в отдельный коммит git. Обратите внимание на рабочее пространство: патч <code>0001</code> теперь не файл, а коммит. Слой workspace подключился с высоким приоритетом и <b>перекрыл рецепт</b> из meta-vendor.",
+      run: function () {
+        say("cmd", "$ devtool modify hostapd");
+        say("dim", "NOTE: Fetching hostapd...");
+        say("dim", "NOTE: Unpacking...");
+        say("dim", "NOTE: Applying patches as git commits...");
+        say("ok", "INFO: Source tree: build/workspace/sources/hostapd");
+        say("ok", "INFO: hostapd: перенесён в рабочее пространство");
+        S.wsActive = true;
+        S.commits = ["f01aa11 increase scan timeout  <- из патча 0001"];
+      }
+    },
+    {
+      label: "правим src/ap/hostapd.c",
+      explain: "<b>Что произошло.</b> Это обычное дерево исходников под git — правьте чем угодно. Пока правка не закоммичена, она существует только в рабочем дереве: <code>devtool finish</code> её <b>не увидит</b>, потому что патчи он делает из коммитов.",
+      run: function () {
+        say("cmd", "$ vi src/ap/hostapd.c   # добавили vendor IE");
+        say("dim", "1 file changed, 12 insertions(+)");
+        say("warn", "правка есть в дереве, но ещё не закоммичена");
+        S.dirty = true;
+      }
+    },
+    {
+      label: "git commit -m 'add vendor IE'",
+      explain: "<b>Что произошло.</b> Появился второй коммит. Именно это и станет вторым файлом патча. Правило простое: <b>один коммит — один патч</b>, поэтому черновые коммиты вида «поправил опечатку» лучше сложить в один до финиша.",
+      run: function () {
+        say("cmd", "$ git add -u && git commit -m 'add vendor IE to beacon'");
+        say("ok", "[hostapd b7c9e02] add vendor IE to beacon");
+        S.dirty = false;
+        S.commits.push("b7c9e02 add vendor IE to beacon  <- ваша правка");
+      }
+    },
+    {
+      label: "devtool build hostapd",
+      explain: "<b>Что произошло.</b> Собрался <b>только этот компонент</b>, а не весь образ — поэтому цикл занимает минуты. Заметьте: в образе прошивки по-прежнему один патч. Сборка компонента ничего в продукт не переносит.",
+      run: function () {
+        say("cmd", "$ devtool build hostapd");
+        say("dim", "NOTE: Executing do_compile...");
+        say("ok", "NOTE: Tasks Summary: 6 didn't need to be rerun, 3 executed");
+        S.built = true;
+      }
+    },
+    {
+      label: "devtool deploy-target hostapd root@device",
+      explain: "<b>Тут ломается интуиция.</b> Бинарь уехал на живое устройство по ssh и работает — но <b>в образе его нет</b>. Перепрошивка сотрёт правку, и будет казаться, что она «пропала». Это инструмент проверки, а не внедрения. И не забудьте перезапустить сервис, иначе старый процесс продолжит работать со старым кодом.",
+      run: function () {
+        say("cmd", "$ devtool deploy-target hostapd root@192.168.1.1");
+        say("dim", "NOTE: Copying files to target...");
+        say("ok", "INFO: Deployed to root@192.168.1.1");
+        say("warn", "в образе прошивки этой правки НЕТ");
+        S.deployed = true;
+        S.onDevice = ["правка 'add vendor IE' поверх образа"];
+      }
+    },
+    {
+      label: "devtool finish hostapd meta-vendor",
+      explain: "<b>Вот теперь правка в продукте.</b> Оба коммита превратились обратно в файлы патчей, легли в слой, а SRC_URI получил вторую строку. Рабочее пространство очищено, сборка снова идёт по рецепту из слоя — но рецепт уже другой. Сравните панель «Рецепт» с тем, что было в начале.",
+      run: function () {
+        say("cmd", "$ devtool finish hostapd /work/meta-vendor");
+        say("dim", "NOTE: Writing patches to meta-vendor/.../hostapd/files/");
+        say("ok", "  0001-increase-scan-timeout.patch");
+        say("ok", "  0002-add-vendor-IE-to-beacon.patch");
+        say("ok", "INFO: Rewriting SRC_URI in hostapd_%.bbappend");
+        say("ok", "INFO: hostapd: удалён из рабочего пространства");
+        S.layerPatches = ["0001-increase-scan-timeout.patch", "0002-add-vendor-IE-to-beacon.patch"];
+        S.inImage = S.layerPatches.slice();
+        S.wsActive = false;
+        S.commits = [];
+        S.finished = true;
+      }
+    }
+  ];
+
+  function doReset() {
+    say("cmd", "$ devtool reset hostapd");
+    say("dim", "NOTE: Leaving source tree build/workspace/sources/hostapd as-is");
+    say("err", "INFO: hostapd снят с разработки — патчи НЕ созданы");
+    say("err", "правка осталась в рабочем каталоге и в продукт не попала");
+    S.wsActive = false;
+    S.commits = [];
+    S.dirty = false;
+    S.wasReset = true;
+    S.step = STEPS.length;
+    render();
+  }
+
+  function doStep() {
+    if (S.step >= STEPS.length) return;
+    STEPS[S.step].run();
+    document.getElementById("explain").innerHTML = STEPS[S.step].explain;
+    S.step++;
+    render();
+  }
+
+  function render() {
+    renderTerm();
+    renderRecipe();
+    renderWs();
+    renderWhere();
+    renderProgress();
+    renderButtons();
+  }
+
+  function renderButtons() {
+    var box = document.getElementById("buttons");
+    box.innerHTML = "";
+
+    if (S.step < STEPS.length) {
+      var b = document.createElement("button");
+      b.className = "primary";
+      b.textContent = STEPS[S.step].label;
+      b.onclick = doStep;
+      box.appendChild(b);
+    }
+
+    // reset доступен, пока компонент в рабочем пространстве
+    if (S.wsActive && S.step >= 3) {
+      var r = document.createElement("button");
+      r.className = "danger";
+      r.textContent = "devtool reset (вместо finish)";
+      r.onclick = doReset;
+      box.appendChild(r);
+    }
+
+    var again = document.createElement("button");
+    again.textContent = "начать заново";
+    again.onclick = function () {
+      reset();
+      document.getElementById("explain").innerHTML = START_TEXT;
+      render();
+    };
+    box.appendChild(again);
+
+    if (S.finished) {
+      document.getElementById("explain").innerHTML = STEPS[STEPS.length - 1].explain +
+        '<br><br><b>Итог.</b> Правка доехала до продукта только на шаге <code>finish</code>. ' +
+        'Всё, что было до него, — проверка гипотезы.';
+    }
+    if (S.wasReset) {
+      document.getElementById("explain").innerHTML =
+        '<b>Что произошло.</b> <code>reset</code> снял компонент с разработки и вернул сборку к рецепту из слоя. ' +
+        'Каталог с исходниками остался на диске, но в сборку из него больше ничего не идёт: ' +
+        'в слое по-прежнему один патч, а ваш второй нигде не записан. ' +
+        'Это самая частая потеря работы у новичков — <code>reset</code> путают с <code>finish</code>.';
+    }
+  }
+
+  var START_TEXT = 'Слева направо по шагам. Следите за панелью <b>«Что где оказалось»</b>: ' +
+    'до самого конца в образе прошивки будет лежать только исходный патч.';
+
+  reset();
+  document.getElementById("explain").innerHTML = START_TEXT;
+  render();
+})();
+</script>
+</body>
+</html>
