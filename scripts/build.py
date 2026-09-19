@@ -94,6 +94,13 @@ TOPICS = {
     "mda_normal_distribution_de_moivre_laplace": {"title": "MDA 7: Нормальное распределение, три сигмы, теорема Муавра-Лапласа", "sim": ""},
     "mda_derivatives_integrals_extrema": {"title": "MDA 8: Производные, экстремумы, интегралы, площадь между кривыми", "sim": ""},
     "mda_functions_several_variables_optimization": {"title": "MDA 9: Функции нескольких переменных, частные производные, оптимизация", "sim": ""},
+    "rcf_control_basics_modelling_block_diagrams": {"title": "RCF 1: Основы ТАУ, моделирование (Лаплас), структурные схемы", "sim": ""},
+    "rcf_time_response_standard_links_frequency": {"title": "RCF 2: Временные характеристики, типовые звенья, частотные характеристики", "sim": ""},
+    "rcf_stability_routh_nyquist_bode_root_locus": {"title": "RCF 3: Устойчивость: Раус-Гурвиц, Найквист, Боде, корневой годограф", "sim": ""},
+    "rcf_control_quality_steady_state_robustness": {"title": "RCF 4: Качество, установившаяся точность, робастность", "sim": ""},
+    "rcf_pid_control_tuning_advanced_structures": {"title": "RCF 5: PID-регулирование, настройка, каскад и feedforward", "sim": ""},
+    "rcf_digital_control_sampling_z_domain": {"title": "RCF 6: Цифровое управление: дискретизация, z-область, частота выборки", "sim": ""},
+    "rcf_sensors_signal_conditioning_control_paradigms": {"title": "RCF 7: Датчики роботов, фильтрация, парадигмы и интеллектуальное управление", "sim": ""},
 }
 
 
