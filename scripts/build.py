@@ -76,6 +76,14 @@ TOPICS = {
     "is1_evolutionary_algorithms": {"title": "IS1: Эволюционные алгоритмы (GA и GP)", "sim": ""},
     "is1_artificial_agents": {"title": "IS1: Искусственные агенты", "sim": ""},
     "is1_responsible_ai": {"title": "IS1: Заключительная лекция — лучшие практики и Responsible AI", "sim": ""},
+    "dsp_phase_types_and_tf_identification": {"title": "DSP 1: Минимальная, максимальная и линейная фаза; определение передаточной функции", "sim": ""},
+    "dsp_generalised_correlation_method": {"title": "DSP 2: Обобщённый корреляционный метод: задержки и сглаживание характеристик", "sim": ""},
+    "dsp_inverse_tf_and_equalisation": {"title": "DSP 3: Обратная передаточная функция и выравнивание АЧХ", "sim": ""},
+    "dsp_identification_to_design_specification": {"title": "DSP 4: От идентификации ЛДС к техническому заданию на синтез", "sim": ""},
+    "dsp_fir_arbitrary_magnitude_approximation": {"title": "DSP 5: Аппроксимация произвольной АЧХ FIR-системами", "sim": ""},
+    "dsp_iir_prony_and_parametric_equalisers": {"title": "DSP 6: IIR-аппроксимация: метод Прони, параметрические эквалайзеры, реализация", "sim": ""},
+    "dsp_fir_phase_correctors_and_hilbert": {"title": "DSP 7: Фазовые корректоры на FIR, преобразование Гильберта, квадратурная обработка", "sim": ""},
+    "dsp_iir_allpass_correctors_and_synthesis": {"title": "DSP 8: Фазовые корректоры на IIR (all-pass) и синтез ЛДС с заданной АЧХ", "sim": ""},
 }
 
 
