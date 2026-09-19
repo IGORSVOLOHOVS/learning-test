@@ -85,6 +85,15 @@ TOPICS = {
     "dsp_iir_prony_and_parametric_equalisers": {"title": "DSP 6: IIR-аппроксимация: метод Прони, параметрические эквалайзеры, реализация", "sim": ""},
     "dsp_fir_phase_correctors_and_hilbert": {"title": "DSP 7: Фазовые корректоры на FIR, преобразование Гильберта, квадратурная обработка", "sim": ""},
     "dsp_iir_allpass_correctors_and_synthesis": {"title": "DSP 8: Фазовые корректоры на IIR (all-pass) и синтез ЛДС с заданной АЧХ", "sim": ""},
+    "mda_matrices_determinants_transformations": {"title": "MDA 1: Матрицы, определители, обратная матрица, матрицы преобразований", "sim": ""},
+    "mda_slae_gauss_rank_flow_networks": {"title": "MDA 2: СЛАУ: Крамер, Гаусс, ранг, Руше-Капелли, сети потоков", "sim": ""},
+    "mda_linear_spaces_rank_matrix_decompositions": {"title": "MDA 3: Линейные пространства, ранг, разложения матриц (LU, QR, собственные значения, SVD)", "sim": ""},
+    "mda_probability_events_combinatorics": {"title": "MDA 4: Вероятность: события, классическое определение, комбинаторика", "sim": ""},
+    "mda_conditional_probability_total_bayes": {"title": "MDA 5: Условная вероятность, полная вероятность, теорема Байеса", "sim": ""},
+    "mda_discrete_random_variables_binomial_poisson": {"title": "MDA 6: Дискретные случайные величины, биномиальное и пуассоновское распределения", "sim": ""},
+    "mda_normal_distribution_de_moivre_laplace": {"title": "MDA 7: Нормальное распределение, три сигмы, теорема Муавра-Лапласа", "sim": ""},
+    "mda_derivatives_integrals_extrema": {"title": "MDA 8: Производные, экстремумы, интегралы, площадь между кривыми", "sim": ""},
+    "mda_functions_several_variables_optimization": {"title": "MDA 9: Функции нескольких переменных, частные производные, оптимизация", "sim": ""},
 }
 
 
