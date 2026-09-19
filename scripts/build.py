@@ -77,6 +77,7 @@ TOPICS = {
     "is1_artificial_agents": {"title": "IS1: Искусственные агенты", "sim": ""},
     "is1_responsible_ai": {"title": "IS1: Заключительная лекция — лучшие практики и Responsible AI", "sim": ""},
     "dsp_phase_types_and_tf_identification": {"title": "DSP 1: Минимальная, максимальная и линейная фаза; определение передаточной функции", "sim": ""},
+    "eye_in_hand_calibration": {"title": "Eye-in-hand калибровка лазерного сканера (waam-calibration-2.0)", "sim": ""},
     "dsp_generalised_correlation_method": {"title": "DSP 2: Обобщённый корреляционный метод: задержки и сглаживание характеристик", "sim": ""},
     "dsp_inverse_tf_and_equalisation": {"title": "DSP 3: Обратная передаточная функция и выравнивание АЧХ", "sim": ""},
     "dsp_identification_to_design_specification": {"title": "DSP 4: От идентификации ЛДС к техническому заданию на синтез", "sim": ""},

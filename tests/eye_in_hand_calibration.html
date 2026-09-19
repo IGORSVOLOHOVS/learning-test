@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Eye-in-hand калибровка лазерного сканера (waam-calibration-2.0)</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d29;
+    --text: #eef0f6;
+    --muted: #8b8fa3;
+    --accent: #5b8cff;
+    --good: #2fbf71;
+    --bad: #ef5350;
+    --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 17px;
+    line-height: 1.45;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 100px; }
+  header { padding: 14px 0 10px; }
+  h1 { font-size: 1.2rem; margin: 0 0 10px; }
+  .progressbar { height: 8px; background: var(--border); border-radius: 5px; overflow: hidden; }
+  .progressbar > div { height: 100%; background: var(--accent); transition: width .25s; }
+  .meta { display: flex; justify-content: space-between; font-size: .85rem; color: var(--muted); margin-top: 6px; }
+  .block-label { display: inline-block; background: var(--card); border: 1px solid var(--border); color: var(--accent); font-size: .75rem; padding: 3px 10px; border-radius: 20px; margin-bottom: 10px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-top: 10px; }
+  .question { font-size: 1.08rem; margin: 0 0 10px; white-space: pre-wrap; }
+  .question pre.qcode { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #0f1117; border: 1px solid var(--border); overflow-x: auto; white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82rem; line-height: 1.5; color: #d7dbe8; }
+  .opt code.optcode { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88rem; white-space: pre-wrap; }
+  .qsearch { margin: 0 0 14px; }
+  .options { display: flex; flex-direction: column; gap: 10px; }
+  .opt {
+    display: block; width: 100%; text-align: left;
+    background: #232838; color: var(--text);
+    border: 2px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; font-size: 1rem; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .opt:active { transform: scale(0.995); }
+  .opt.correct { border-color: var(--good); background: rgba(47,191,113,0.15); }
+  .opt.wrong { border-color: var(--bad); background: rgba(239,83,80,0.15); }
+  .opt.disabled { pointer-events: none; opacity: .85; }
+  .opt.dim { opacity: .5; }
+  .explain {
+    margin-top: 14px; padding: 12px 14px; border-radius: 10px;
+    background: #171a24; border-left: 3px solid var(--accent);
+    font-size: .92rem; color: #c7cadb; display: none;
+  }
+  .explain.show { display: block; }
+  .usage { margin-top: 12px; display: none; flex-direction: column; gap: 10px; }
+  .usage.show { display: flex; }
+  .usage .u-part { padding: 10px 12px; border-radius: 10px; background: #171a24; border-left: 3px solid var(--border); }
+  .usage .u-without { border-left-color: var(--bad); }
+  .usage .u-with { border-left-color: var(--good); }
+  .usage .u-label { font-weight: 700; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; color: var(--muted); }
+  .usage .u-without .u-label { color: var(--bad); }
+  .usage .u-with .u-label { color: var(--good); }
+  .usage .u-text { font-size: .9rem; color: #c7cadb; white-space: pre-wrap; }
+  .usage pre { margin: 0; padding: 8px 10px; border-radius: 8px; background: #0f1117; overflow-x: auto; white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .84rem; line-height: 1.45; color: #d7dbe8; }
+  .usage .u-benefit { padding: 9px 12px; border-radius: 10px; background: rgba(47,191,113,0.14); font-size: .9rem; color: var(--text); }
+  .nav { display: flex; gap: 10px; margin-top: 18px; }
+  button.btn {
+    flex: 1; padding: 14px; font-size: 1rem; border-radius: 12px; border: none;
+    background: var(--accent); color: white; cursor: pointer; font-weight: 600;
+  }
+  button.btn.secondary { background: #232838; color: var(--text); border: 1px solid var(--border); }
+  button.btn:disabled { opacity: .4; pointer-events: none; }
+  .topbar { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  .iconbtn {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 10px; padding: 8px 12px; font-size: .85rem; cursor: pointer;
+    text-decoration: none; display: inline-flex; align-items: center;
+  }
+  .result { text-align: center; padding: 20px 0; }
+  .result .score { font-size: 3rem; font-weight: 700; color: var(--accent); }
+  .blockscores { margin-top: 20px; text-align: left; }
+  .blockscores .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .92rem; }
+  a.back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 18px; border-radius: 10px; font-size: .9rem; opacity: 0;
+    transition: opacity .3s; pointer-events: none; z-index: 100; max-width: 90%; text-align: center;
+  }
+  .toast.show { opacity: 1; }
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    align-items: center; justify-content: center; z-index: 200; padding: 20px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; max-width: 380px; width: 100%; }
+  .modal h3 { margin-top: 0; }
+  .modal .btn { margin-top: 10px; }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80;
+      --border: #e3e5ee;
+    }
+    .opt { background: #f7f8fc; }
+    .explain { background: #f0f2fa; color: #3a3d4d; }
+    .usage .u-part { background: #f0f2fa; }
+    .usage .u-text { color: #3a3d4d; }
+    .usage pre { background: #eceef7; color: #23262f; }
+    .question pre.qcode { background: #eceef7; color: #23262f; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topbar">
+      <a class="back" href="../index.html">&larr; Все тесты</a>
+      <div style="display:flex; gap:8px;">
+        
+        <button class="iconbtn" id="syncBtn">☁️ Синхронизировать</button>
+      </div>
+    </div>
+    <h1>Eye-in-hand калибровка лазерного сканера (waam-calibration-2.0)</h1>
+    <div class="progressbar"><div id="progressFill" style="width:0%"></div></div>
+    <div class="meta">
+      <span id="blockLabel"></span>
+      <span id="progressText">0 / 50</span>
+    </div>
+  </header>
+
+  <div id="quizArea"></div>
+
+  <div id="resultArea" style="display:none"></div>
+
+  <div style="margin-top:24px; text-align:center;">
+    <button class="btn secondary" id="resetBtn">Сбросить прогресс и начать заново</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="syncModal">
+  <div class="modal">
+    <h3>Синхронизация всех тестов с Google Drive</h3>
+    <p id="syncStatus" style="color:var(--muted); font-size:.9rem;">Один вход — синхронизируются сразу все тесты.</p>
+    <button class="btn" id="syncUploadBtn">⬆️ Отправить весь прогресс в Drive</button>
+    <button class="btn secondary" id="syncDownloadBtn">⬇️ Загрузить весь прогресс из Drive</button>
+    <button class="btn secondary" id="syncCloseBtn">Закрыть</button>
+  </div>
+</div>
+
+<script src="../config.js"></script>
+<script src="../sync.js"></script>
+<script>
+(function () {
+  const TEST_ID = "eye_in_hand_calibration";
+  const QUESTIONS = [{"q": "Что именно ищет eye-in-hand калибровка линейного сканера на фланце робота?", "options": ["Положение сферы-мишени в мировой системе робота с учётом её радиуса", "Преобразование T_WF — позу фланца в мире, уточнённую по сканам сферы", "Внутренние параметры сканера: фокус, дисторсию и шаг профиля по x", "Постоянное жёсткое преобразование T_FS — сканер в системе фланца"], "correct": 3, "explain": "T_WF робот сообщает сам; T_FS никто не измеряет напрямую, его выводят из того, что сканер видит при движении робота. Центр сферы — попутный неизвестный, не цель.", "usage": {"code": true, "without": "p_w = pose_wf @ p_s  # точка сканера подставлена как точка фланца\n# облако «плывёт» при каждом повороте фланца", "with": "p_w = transform_points(p_s, pose_wf @ t_fs)  # T_WF · T_FS · p_S\n# одно T_FS на все сканы — облако собирается в сферу", "benefit": "Одна матрица связывает сканер с роботом навсегда"}}, {"q": "Какова прямая модель точки сканера в мировой системе, которой пользуется весь инструмент?", "options": ["p_W = T_FS · T_WF · p_S", "p_W = T_WF⁻¹ · T_FS · p_S", "p_W = T_WF · T_FS · p_S", "p_W = T_FS⁻¹ · T_WF⁻¹ · p_S"], "correct": 2, "explain": "Сначала точка из сканера переводится во фланец через T_FS, затем фланец — в мир через T_WF. Порядок умножения матриц читается справа налево. Реализация: transform_points(points_s, pose_wf @ t_fs).", "usage": {"code": true, "without": "pw = transform_points(pts, t_fs @ s.pose_wf)  # порядок перепутан", "with": "pw = transform_points(pts, s.pose_wf @ t_fs)  # optimize.py, evaluate()", "benefit": "Неверный порядок даёт правдоподобные, но неверные числа"}}, {"q": "Почему мишенью для калибровки служит именно сфера известного радиуса?", "options": ["Она даёт наибольшее число точек на профиль, что улучшает статистику оценки центра и радиуса", "Она выглядит одинаково с любого направления, и ограничение не требует знать, какая её часть видна", "Лазерная линия на сфере всегда проходит через её центр, что сразу фиксирует смещение по y", "Её проще всего закрепить в ячейке, и она не требует выверки по уровню перед каждой сессией"], "correct": 1, "explain": "Плоскость даёт одно скалярное ограничение вдоль нормали, а куб требует знать, какая грань видна. Сфера — единственная форма без ориентации, поэтому остаток ‖p_W − c‖ − R корректен для любой позы робота.", "usage": {"code": true, "without": "# плоскость: r = n·p_w − d\n# сдвиг сканера в плоскости и поворот вокруг нормали r не меняют", "with": "r = np.linalg.norm(p_w - c, axis=1) - R  # sphere_residuals\n# любой сдвиг/поворот сканера меняет r", "benefit": "Каждая точка полностью ограничивает своё положение"}}, {"q": "Как определён остаток одной точки в sphere_residuals, на котором построены все оптимизаторы и гейты?", "options": ["Квадрат расстояния до центра минус квадрат радиуса, в квадратных метрах, без знака", "Модуль расстояния до поверхности |‖p_W − c‖ − R|, всегда неотрицательный, в метрах", "Расстояние от точки до ближайшей точки плоскости лазера, в миллиметрах, со знаком", "Знаковое расстояние до поверхности ‖p_W − c‖ − R, положительное снаружи, в метрах"], "correct": 3, "explain": "Остаток знаковый: снаружи сферы положительный, внутри отрицательный; единицы — метры, RMSE выводится уже в мм. Именно знак позволяет BiasGate ловить систематическое смещение скана.", "usage": {"code": true, "without": "r = np.abs(np.linalg.norm(P - c, axis=1) - R)  # знак потерян, bias невидим", "with": "r = np.linalg.norm(P - c, axis=1) - R  # sphere.py: signed, метры", "benefit": "Среднее остатка по скану показывает смещение, а не только разброс"}}, {"q": "Что возвращает линейный сканер за одно измерение и в какой геометрической фигуре лежат эти точки на сфере?", "options": ["Профиль из N точек в своей плоскости xz; на сфере они лежат на дуге окружности", "Облако из N точек в трёх измерениях, лежащее на сферическом сегменте вокруг полюса", "Один луч дальности вдоль оси z, дающий одну точку на поверхности сферы за измерение", "Профиль из N точек в плоскости xy, образующий на поверхности сферы дугу эллипса"], "correct": 0, "explain": "Плоскость лазера y = 0 сечёт сферу по окружности; сканер видит её дугу как N точек (x, 0, z). Поэтому первый шаг — fit_circle_2d по x и z профиля.", "usage": {"code": true, "without": "fit_sphere_algebraic(points_of_one_profile)  # 4 неизвестных из компланарных точек — вырождено", "with": "xc, zc, r, rms = fit_circle_2d(pts[:,0], pts[:,2])  # sphere.py", "benefit": "Окружность из одного профиля определена, сфера — нет"}}, {"q": "Пусть сечение сферы радиуса R лазерной плоскостью — окружность радиуса r. Как выражается смещение центра сферы от плоскости лазера?", "options": ["y_off = R − r вдоль оси z сканера", "y_off = √(R² + r²) вдоль оси y сканера", "y_off = ±√(R² − r²) вдоль оси y сканера", "y_off = R·r / (R + r) вдоль нормали к профилю"], "correct": 2, "explain": "Из теоремы Пифагора: r² + y_off² = R². При экваториальном сечении r = R и y_off = 0. Знак не наблюдаем из одного профиля — сечение симметрично относительно плоскости.", "usage": {"code": true, "without": "c_s = (xc, 0.0, zc)  # считаем каждое сечение экваториальным — ошибка до R", "with": "y_abs = sqrt(max(R**2 - r**2, 0)); c_s = (xc, ±y_abs, zc)  # linear_init", "benefit": "Смещение восстанавливается из радиуса окружности"}}, {"q": "Сколько независимых неизвестных решает совместный многосессионный фит при фиксированном радиусе и n сессиях?", "options": ["6n + 3: своё T_FS у каждой сессии и один общий центр сферы", "6 + 3: одно T_FS и один центр, центры сессий предварительно усредняются", "7 + 3n: T_FS, свободный радиус и по одному центру на каждую сессию", "6 + 3n: одно общее T_FS и по центру сферы на сессию"], "correct": 3, "explain": "Сканер на фланце один, поэтому T_FS общее; сферу между сессиями могли передвинуть, поэтому центр свой у каждой. Радиус берётся из паспорта и по умолчанию fix_radius=True.", "usage": {"code": true, "without": "x0 = np.zeros(6 + 3)  # один центр на все сессии — сдвинутая сфера ломает фит", "with": "n_c = 3 * len(sessions); x0 = np.zeros(6 + n_c)  # refine_lm", "benefit": "Каждая сессия ограничивает T_FS, не мешая другим"}}, {"q": "Почему из одного профиля нельзя определить знак смещения y_off центра сферы?", "options": ["Сечение симметрично относительно плоскости лазера: центр спереди и сзади даёт ту же окружность", "Сканер измеряет только модуль дальности по лучу и не различает направление отражения", "Радиус окружности r известен с ошибкой, которая обычно больше самого смещения y_off", "Ось y сканера не определена до нахождения T_FS, поэтому знак условен и назначается позже"], "correct": 0, "explain": "Круг одного радиуса получается при центре на +y_off и на −y_off. Знак восстанавливает linear_init итерационно: по текущему решению центр переводится в систему сканера и берётся sign(c_s[1]).", "usage": {"code": true, "without": "signs = np.ones(n)  # все сечения считаем с одной стороны — r2 сходится не туда", "with": "c_s = inv_se3(T_ws) @ c; signs[i] = 1 if c_s[1] >= 0 else -1  # linear_init", "benefit": "Знак берётся из глобального решения, а не из профиля"}}, {"q": "Что такое «сессия» в модели данных инструмента и зачем она нужна?", "options": ["Группа сканов с одинаковой ориентацией фланца, объединяемая ради устойчивости решения", "Группа сканов при неподвижной сфере; у каждой сессии свой центр в фите", "Набор сканов одного дня, для которого ведётся отдельный лог остатков и предупреждений", "Профили одного прохода лазера, склеиваемые в одно облако до подгонки сферы"], "correct": 1, "explain": "Scan.session_id связывает скан с центром: centers[s.session_id]. Если сферу переставили, это новая сессия; T_FS при этом остаётся общим — в этом смысл joint multi-session fit.", "usage": {"code": true, "without": "centers = {'all': c}  # передвинутая сфера портит фит всем сканам", "with": "c = centers[s.session_id]  # evaluate(): свой центр каждой сессии", "benefit": "Перестановка мишени не требует отдельной калибровки"}}, {"q": "Какая величина является главным показателем качества калибровки в инструменте и в каких единицах она выводится?", "options": ["Средний знаковый остаток по всем сканам, в метрах, с поправкой на число сессий", "RMSE знаковых остатков до поверхности по всем активным точкам, в миллиметрах", "Максимальное по модулю отклонение точки от сферы среди активных, в микрометрах", "Число активных точек после всех фильтров, отнесённое к исходному, безразмерно"], "correct": 1, "explain": "rmse_mm = sqrt(mean(r²))·1e3. Максимум чувствителен к одному выбросу, среднее скрывает разброс, число точек ничего не говорит о геометрии.", "usage": {"code": true, "without": "score = np.abs(r).max()  # один выброс делает калибровку «плохой»", "with": "fit.rmse_mm = rmse(r) * 1e3  # optimize.evaluate()", "benefit": "Одно число, сопоставимое между сессиями и инструментами"}}, {"q": "В каком порядке компоненты твиста ξ ожидают hat_se3 и exp_se3 в этом проекте?", "options": ["Сначала перенос v, затем вращение ω: [v_x, v_y, v_z, ω_x, ω_y, ω_z]", "Сначала вращение ω, затем перенос v, как в Sophus и в книге Barfoot", "Чередование по осям: v_x, ω_x, v_y, ω_y, v_z, ω_z, как в винтовых координатах", "Порядок не важен: функция сама определяет угловую часть по норме вектора"], "correct": 0, "explain": "se3.py: v, w = xi[:3], xi[3:]. Библиотеки Sophus/Barfoot используют [ω; v]. Перепутанный порядок не даёт ошибки формы — угловая часть молча станет переносом.", "usage": {"code": true, "without": "xi = np.r_[w, v]; T = exp_se3(xi)  # ω принято за перенос, ошибки нет", "with": "xi = np.r_[v, w]; T = exp_se3(xi)  # se3.py: перенос первым", "benefit": "Порядок фиксирован одним местом и якобианами оптимизаторов"}}, {"q": "Какую формулу реализует exp_so3 для ненулевого угла θ = ‖ω‖ с K = ω^?", "options": ["R = I + sin θ·K + cos θ·K² через нормированную ось единичной длины", "R = I + (sin θ/θ)·K + ((1 − cos θ)/θ²)·K² через ненормированную K", "R = I + K + K²/2 + K³/6, ряд Тейлора, обрезанный на третьем члене", "R = (I − K)⁻¹·(I + K), преобразование Кэли, точное для малых углов"], "correct": 1, "explain": "Это классический Родриг, записанный через K = θ·[k]ₓ, что даёт множители sin θ/θ и (1−cos θ)/θ². Ветка Тейлора I + K + K²/2 включается только при θ < 1e−12.", "usage": {"code": true, "without": "R = np.eye(3) + K + K@K/2  # Тейлор для любого θ — при 30° ошибка в градусы", "with": "R = I + (np.sin(th)/th)*K + ((1-np.cos(th))/th**2)*(K@K)  # exp_so3", "benefit": "Точная замкнутая форма при любом угле"}}, {"q": "Что такое матрица V в exp_se3 и на что она умножается?", "options": ["Матрица вращения (та же, что exp_so3), умножается на ω и даёт ось поворота", "Левый якобиан SO(3); умножается на v, давая перенос T[:3,3] = V·v", "Обратная матрица инерции тела, умножается на v для учёта плеча относительно фланца", "Единичная матрица при любом θ, оставлена в коде ради совместимости с expm"], "correct": 1, "explain": "Перенос при экспоненте — не сам v, а V·v: вращение по пути «закручивает» перенос. При θ→0 V = I + K/2 + K²/6. Результат совпадает с scipy.linalg.expm.", "usage": {"code": true, "without": "T[:3,3] = v  # игнорируем V: при больших ω перенос уезжает", "with": "T[:3,3] = V @ v  # exp_se3, замкнутая форма se(3)→SE(3)", "benefit": "Итерации остаются точно на SE(3) без ре-ортогонализации"}}, {"q": "Как оптимизаторы применяют приращение к T_FS и что это означает геометрически?", "options": ["Справа: T_FS = T_FS₀·exp(ξ) — движение в системе сканера, вокруг его начала", "Аддитивно: T_FS = T_FS₀ + ξ^, с последующей проекцией на SO(3) через SVD", "Слева: T_FS = exp(ξ)·T_FS₀ — движение в системе фланца, вокруг его начала", "Интерполяцией: T_FS = slerp(T_FS₀, exp(ξ), ½) для устойчивости к большим шагам"], "correct": 2, "explain": "optimize.py: exp_se3(x[:6]) @ t_fs0. К первому порядку точка фланца сдвигается на v + ω×p_F, что и даёт блок якобиана [R_WF, −R_WF[p_F]ₓ]. Правая свёртка потребовала бы другого якобиана.", "usage": {"code": true, "without": "t_fs = t_fs0 @ exp_se3(dx)  # правое приращение с левым якобианом — сходится не туда", "with": "t_fs = exp_se3(dx) @ t_fs0  # optimize.py: левое, как и якобиан", "benefit": "Приращение и якобиан согласованы в одной системе"}}, {"q": "Как project_to_so3 получает ближайшую матрицу вращения и что делает с отражением?", "options": ["SVD: R = U·Vᵀ; при det R < 0 меняется знак последнего столбца U", "Грам–Шмидт по столбцам, а отражение оставляется как есть, поскольку det не проверяется", "Полярное разложение через квадратный корень из MᵀM, знак определителя не меняется", "Нормировка первых двух столбцов и векторное произведение для третьего столбца"], "correct": 0, "explain": "Это проекция по Фробениусу, тот же приём, что в Кабше. Без проверки det для M = diag(1,1,−1) вернулась бы сама M — отражение, а не вращение.", "usage": {"code": true, "without": "R = U @ Vt  # для отражённого M получаем det = -1", "with": "if det(R) < 0: U[:, -1] *= -1; R = U @ Vt  # project_to_so3", "benefit": "Линейная инициализация всегда даёт настоящий поворот"}}, {"q": "Что означает строка 'xyz' в scipy Rotation.from_euler в соглашении проекта и какому произведению матриц она равна?", "options": ["Внутренние оси: R = Rx(rx)·Ry(ry)·Rz(rz), как углы Тейта–Брайана у самолёта", "Порядок применения к точке: сначала поворот вокруг z, потом y, потом x", "Кватернионное представление, при котором порядок осей значения не имеет", "Внешние оси: R = Rz(rz)·Ry(ry)·Rx(rx), как Yaskawa Rx/Ry/Rz"], "correct": 3, "explain": "Строчные 'xyz' у scipy — extrinsic, вращения вокруг неподвижных осей x, затем y, затем z, отсюда произведение Rz·Ry·Rx. Проверено численно на совпадение с kinematics.yaskawa_euler_to_matrix.", "usage": {"code": true, "without": "Rotation.from_euler('XYZ', [rx, ry, rz], degrees=True)  # заглавные — intrinsic, другой поворот", "with": "Rotation.from_euler('xyz', [rx, ry, rz], degrees=True)  # se3.matrix_from_euler_xyz_deg", "benefit": "Совпадает с тем, что показывает пульт робота"}}, {"q": "В первом проходе linear_init столбцы r₂ матрицы R_FS исключаются из системы. Почему?", "options": ["Столбец r₂ точнее восстанавливается из ортогональности после решения, чем из данных", "Ось y сканера физически не измеряется линейным сканером, поэтому её вклад не учитывают", "Из-за ограничения det R = 1 система теряет три степени свободы, которые убирают заранее", "При y_off = 0 коэффициент при r₂ нулевой, столбцы ненаблюдаемы и система вырождена"], "correct": 3, "explain": "Уравнение c = R_WF(x_c·r₁ + y_off·r₂ + z_c·r₃ + t_FS) + t_WF при неизвестном знаке y_off решается с y_off = 0, тогда r₂ умножается на ноль. r₂ берут как r₃ × r₁, а после восстановления знаков решают полную систему.", "usage": {"code": true, "without": "sol = lstsq(A, b)  # с нулевыми столбцами r2 — lstsq вернёт мусор в r2", "with": "keep = [c for c in range(ncol) if c not in (3,4,5)]; sol[keep] = lstsq(A[:,keep], b)", "benefit": "Перенос t_FS определён уже в первом проходе"}}, {"q": "Что даёт итерация use_cut_offset в linear_init после первого прохода?", "options": ["По текущему решению берётся знак y_off каждого профиля, и полная система с r₂ решается заново", "Отбрасываются профили с радиусом окружности меньше min_circle_ratio·R и повторяется первый проход", "Центры сессий усредняются по всем профилям, чтобы уменьшить влияние выбросов на перенос", "Радиус сферы уточняется наименьшими квадратами по всем профилям и подставляется в систему"], "correct": 0, "explain": "sign(c_s[1]) для центра, переведённого в систему сканера через T_WS = T_WF·T_FS, даёт знак смещения. С ним столбец r₂ становится наблюдаемым и решается напрямую.", "usage": {"code": true, "without": "t_fs, centers = solve(False)  # остановились на первом проходе: r2 = r3×r1 без данных", "with": "for _ in range(offset_iters): signs[i] = sign(c_s[1]); sol = solve(True)", "benefit": "Полный поворот восстановлен из тех же профилей"}}, {"q": "Чем подход инструмента отличается от классического hand-eye AX = XB, как у Tsai–Lenz и Park–Martin?", "options": ["Он решает то же AX = XB, но Гауссом–Ньютоном вместо SVD и с центром сферы как дополнительной неизвестной", "Он не требует вращать робота между сканами, тогда как AX = XB требует хотя бы двух независимых вращений", "Он использует камеру и шахматную доску вместо лазера и сферы, поэтому обходится без сечений", "Сфера даёт положение известной точки в системе сканера на каждую позу; задача линейна по T_FS и центрам"], "correct": 3, "explain": "AX = XB связывает относительные движения камеры и фланца. Здесь неизвестный центр c и T_FS входят линейно в c = R_WF(R_FS c_s + t_FS) + t_WF — это DLT-подобная система на 12 + 3n неизвестных.", "usage": {"code": true, "without": "# AX = XB: нужны пары относительных движений и отдельно решаемое вращение", "with": "A[blk,0:3] = xc*R_wf; A[blk,9:12] = R_wf; A[blk,12+3k:15+3k] = -I  # linear_init", "benefit": "Одно линейное решение вместо двухэтапного"}}, {"q": "Какой минимальный набор данных требует linear_init и что происходит при меньшем?", "options": ["Не менее 3 профилей из разных сессий, иначе выдаётся предупреждение и берётся среднее", "Не менее 15 профилей, по числу неизвестных, иначе возвращается единичная матрица", "Не менее 4 пригодных профилей, иначе ValueError", "Не менее 2 сессий с разными центрами, иначе центр принудительно ставится в ноль"], "correct": 2, "explain": "sphere.py: if len(rows) < 4: raise ValueError. Каждый профиль даёт 3 уравнения; 12 неизвестных T_FS плюс 3 на сессию требуют хотя бы четырёх строк-блоков. Профили с r < min_circle_ratio·R или менее 5 точек отбрасываются до подсчёта.", "usage": {"code": true, "without": "t_fs = linear_init(profiles[:3], R)  # ValueError: needs at least 4 usable profiles", "with": "assert len(usable) >= 4; t_fs, centers, info = linear_init(profiles, R)", "benefit": "Ошибка возникает сразу, а не в виде вырожденной матрицы"}}, {"q": "Из чего складывается вектор состояния refine_lm при fix_center=False и fix_radius=True?", "options": ["12 элементов матрицы R_FS, 3 переноса и по 3 координаты центра на сессию", "3 угла Эйлера, 3 переноса и один общий центр для всех сессий", "6 компонент твиста и по 3 координаты центра на сессию", "6 компонент твиста, свободный радиус и один общий центр"], "correct": 2, "explain": "x0 = zeros(6 + 3·n_sessions); T_FS = exp(x[:6])·T_FS₀; центры x[6+3k : 9+3k]. Радиус добавляется последним элементом только при fix_radius=False.", "usage": {"code": true, "without": "x = np.r_[R.ravel(), t, c]  # 16 чисел с 10 связями — LM их не удержит", "with": "x = np.r_[np.zeros(6), *[centers0[s] for s in sessions]]  # refine_lm", "benefit": "Минимальная параметризация без избыточности"}}, {"q": "Как в refine_lm из ковариации приращения получают сигму переноса и зачем нужна матрица J_t = [I | −[t₀]ₓ]?", "options": ["J_t переводит ковариацию из метров и радиан в миллиметры и градусы для отчёта", "J_t обнуляет корреляцию переноса и вращения, чтобы сигмы стали независимыми", "Из-за левого возмущения δt = v + ω × t₀, и J_t учитывает плечо от начала фланца", "J_t проецирует ковариацию на плоскость лазера, где перенос наблюдаем лучше всего"], "correct": 2, "explain": "Вращение вокруг начала фланца тоже сдвигает начало сканера. Без члена −[t₀]ₓ·ω сигма переноса занижена, и тем сильнее, чем дальше сканер от фланца.", "usage": {"code": true, "without": "sigma_t = sqrt(diag(cov[:3,:3]))  # без плеча: занижено при длинном кронштейне", "with": "Jt = hstack([eye(3), -hat_so3(t_fs0[:3,3])]); cov_t = Jt @ cov_xi @ Jt.T", "benefit": "Честная оценка неопределённости переноса"}}, {"q": "В чём принципиальная разница между refine_lm и refine_gn по способу обработки центров сфер?", "options": ["LM фиксирует центры на старте, а GN оптимизирует их совместно с T_FS в одном векторе", "LM использует численный якобиан, GN — аналитический, а центры оба берут из RANSAC", "GN требует точного знания радиуса, LM всегда оценивает радиус как свободный параметр", "LM ищет T_FS и центры в одном векторе; GN чередует шаг по ξ и переоценку центров"], "correct": 3, "explain": "refine_gn: gauss_newton_step по твисту при фиксированных центрах, затем estimate_sphere_center для каждой сессии, до сходимости RMSE. LM держит всё в одном x и получает ковариацию.", "usage": {"code": true, "without": "for it in range(N): t_fs = gn_step(...); centers = estimate_sphere_center(...)  # refine_gn", "with": "sol = least_squares(fun, x0)  # x = [xi | centers], refine_lm", "benefit": "Совместный фит даёт ковариацию по всем параметрам"}}, {"q": "Как работают веса Хьюбера в IRLS-варианте оценки центра и в шаге Гаусса–Ньютона?", "options": ["w = exp(−r²/δ²): гауссово затухание влияния далёких точек без резкого порога", "w = 0 при |r| > δ: точки за порогом полностью исключаются из нормальных уравнений", "w = 1 при |r| ≤ δ, иначе w = δ/|r|: влияние выброса растёт линейно, а не квадратично", "w = δ/r² при всех r: обратно-квадратичное взвешивание с усилением близких точек"], "correct": 2, "explain": "huber_delta по умолчанию 2 мм. Точки внутри порога — обычные наименьшие квадраты, за порогом их вклад в градиент ограничен. Полное исключение делает trimmed_refit, а не Хьюбер.", "usage": {"code": true, "without": "weights = np.ones_like(res)  # один выброс в 5 см тянет центр", "with": "big = res > huber_delta; weights[big] = huber_delta / res[big]  # estimate_sphere_center", "benefit": "Устойчивость без потери точек"}}, {"q": "Что делает orientation_sweep и почему перебираются ровно 24 матрицы?", "options": ["Перебирает 24 угла поворота вокруг оси z с шагом 15° и выбирает запуск с наименьшим RMSE", "Перебирает все 48 знаковых перестановок осей, включая отражения, и отбрасывает det = −1 после фита", "Делит сферу на 24 сектора по азимуту и полярному углу и запускает фит в каждом секторе", "LM из каждого собственного вращения осей, берётся наименьший RMSE; 24 — порядок хиральной октаэдрической группы"], "correct": 3, "explain": "Из 48 знаковых перестановок половина имеет det = −1 и не является вращением. Сканер установлен «примерно по осям», поэтому истинное R_FS близко к одному из 24. Локальный оптимизатор из неверной ориентации сойдётся в ложный минимум с правдоподобным RMSE.", "usage": {"code": true, "without": "fit = refine_lm(ss, np.eye(4), None, R)  # если сканер повёрнут на 90°, ложный минимум", "with": "trials = orientation_sweep(ss, R); best = trials[0]  # отсортировано по rmse_mm", "benefit": "Убирает единственный отказ, невидимый по числам"}}, {"q": "При каком движении робота T_FS принципиально ненаблюдаемо, что проверяет pose_diversity?", "options": ["Когда ориентация фланца одинакова во всех сканах: сдвиг сканера неотличим от сдвига центра", "Когда робот движется слишком быстро и профили размазываются вдоль направления хода", "Когда сфера находится дальше рабочего диапазона сканера и профили обрезаны по краям", "Когда все сканы сделаны в одной сессии с одним центром и без перестановки мишени"], "correct": 0, "explain": "Без вращения R_WF постоянна, и член R_WF·t_FS складывается с c в одну неизвестную сумму. pose_diversity измеряет разброс векторов вращения T_WF и предупреждает.", "usage": {"code": true, "without": "# 40 сканов при одной ориентации: JᵀJ вырождена, sigma_t = inf", "with": "div = pose_diversity([s.pose_wf for s in ss.scans])  # stats.py", "benefit": "Диагноз до оптимизации, а не после"}}, {"q": "Как ransac_center строит гипотезу центра и почему известный радиус важен для этого?", "options": ["3 случайные точки, через них плоскость, центр ищется на её нормали на расстоянии R", "4 случайные точки, центр при фиксированном R, инлаеры по |r| ≤ thresh, переоценка по инлаерам", "5 случайных точек и 4-параметрическая сфера со свободным радиусом, инлаеры по 2σ", "Медиана всех точек как центр, отбрасывается всё дальше порога, затем один шаг IRLS"], "correct": 1, "explain": "Фиксированный R снижает минимальную выборку и делает гипотезу устойчивее: 4 точки достаточно для линейной системы 2xCx + 2yCy + 2zCz + k = x²+y²+z²−R². Лучшая гипотеза уточняется IRLS по инлаерам.", "usage": {"code": true, "without": "c, r = fit_sphere_algebraic(P)  # 40% точек не на сфере — центр уплывает", "with": "c, inl, info = ransac_center(P, R, iters=200, thresh_m=1e-3)", "benefit": "Устойчиво к большой доле мусора"}}, {"q": "Чем trimmed_refit отличается от bias_gate по тому, что они удаляют?", "options": ["trimmed_refit удаляет целые сканы по RMSE, bias_gate — отдельные точки внутри скана", "trimmed_refit маскирует точки с |r| > k·σ, bias_gate выключает сканы с |bias| > k·σ_bias", "Оба удаляют точки, но bias_gate использует медиану остатков вместо сигмы как порог", "trimmed_refit работает до фита по геометрии, bias_gate — только после бутстрэпа"], "correct": 1, "explain": "Скан с неверной позой робота имеет все точки согласованно смещёнными: разброс мал, порог по точкам не срабатывает, но среднее далеко от нуля. Это ловит только статистика по скану.", "usage": {"code": true, "without": "fit, ss2, hist = trimmed_refit(ss, t0, c0, R)  # плохая поза скана переживёт трим", "with": "ss3, fit, hist = bias_gate(ss2, fit.t_fs, fit.centers, R, k_sigma=3)", "benefit": "Разные ошибки — разные фильтры"}}, {"q": "Как bootstrap оценивает неопределённость и чем это отличается от линеаризованной ковариации LM?", "options": ["Добавляет гауссов шум к точкам и повторяет фит, оценивая чувствительность к шуму сканера", "Делит сканы пополам и сравнивает два независимых фита, как в перекрёстной проверке", "Пересэмплирует сканы с возвращением в сессии, повторяет фит n раз, берёт std переноса и углов", "Вычисляет ковариацию через JᵀJ на каждом из n случайных подмножеств точек и усредняет"], "correct": 2, "explain": "Ковариация LM считает тысячи коррелированных точек одного скана независимыми и завышает уверенность при смещённых сканах. Бутстрэп по сканам видит, насколько ответ зависит от того, какие сканы попали в выборку.", "usage": {"code": true, "without": "sigma = sqrt(diag(inv(J.T@J))*s2)  # при смещённых сканах слишком оптимистично", "with": "bs = bootstrap(ss, fit.t_fs, fit.centers, R, n=30, per_session=True)", "benefit": "Два независимых способа: расхождение — сигнал"}}, {"q": "Зачем нужен параметр session_weights='equal' в refine_lm и как он реализован?", "options": ["Каждой сессии назначается один общий центр (усреднённый), чтобы уравнять их влияние", "Из каждой сессии берётся одинаковое число случайных точек, остальные маскируются", "Остатки нормируются на RMSE своей сессии, выравнивая шум между сканерами", "Остатки сессии умножаются на √(mean_n / n_session), чтобы большая сессия не подавляла остальные"], "correct": 3, "explain": "При весах 'points' каждая точка весит 1 и сессия из 5000 точек определяет T_FS почти единолично. Корень из отношения выравнивает суммарный вклад в сумму квадратов.", "usage": {"code": true, "without": "fit = refine_lm(ss, t0, c0, R)  # session_weights='points' по умолчанию", "with": "fit = refine_lm(ss, t0, c0, R, session_weights='equal')", "benefit": "Все сессии голосуют одинаково"}}, {"q": "RMSE после калибровки 0,08 мм, но residual_decomposition показывает, что межскановое смещение много больше внутрискановой шумности. Что это означает и что делать?", "options": ["Сканер шумит сильнее нормы; уменьшить huber_delta до 0,5 мм и повторить LM с trf", "Радиус сферы задан неверно; запустить radius_sweep в диапазоне ±1 мм и выбрать минимум", "Ошибка в позах робота или сдвиге сферы, не в сканере; применить bias_gate и проверить дубли поз", "Точек слишком много для LM; применить voxel_downsample с ячейкой 0,5 мм и повторить"], "correct": 2, "explain": "Внутрискановый шум — свойство сканера. Межскановое смещение — каждый скан целиком сдвинут, что бывает при ошибке позы, неверной синхронизации или сдвинутой мишени.", "usage": {"code": true, "without": "print(fit.rmse_mm)  # 0.08 выглядит отлично, проблема скрыта", "with": "d = residual_decomposition(fit.residuals, fit.scan_idx)  # bias vs noise", "benefit": "Диагноз указывает на источник, а не на симптом"}}, {"q": "Калибровка сошлась с низким RMSE, но при установке нового T_FS в контроллер облако сферы «вращается» вместе с фланцем. Какая ошибка наиболее вероятна?", "options": ["В config.yaml записано обратное преобразование T_FS⁻¹", "Перепутаны миллиметры и метры в переносе cx, cy, cz при экспорте", "Углы crx, cry, crz записаны в радианах вместо градусов", "В поля cx, cy, cz записан центр сферы вместо переноса сканера"], "correct": 0, "explain": "Ошибка единиц дала бы сдвиг в 1000 раз, ошибка градусов — явно неверные углы. Обратное преобразование даёт правдоподобные величины, но точки ставятся зеркально относительно фланца и ошибка растёт с поворотом.", "usage": {"code": true, "without": "T = inv_se3(t_fs); yaml.cx = T[0,3]*1000  # направление перепутано", "with": "yaml.cx = t_fs[0,3]*1000  # exports.py: пишется само T_FS, сканер→фланец", "benefit": "Направление преобразования проверяется на известном объекте"}}, {"q": "В каком порядке рекомендуется выстраивать конвейер очистки и фита и почему именно так?", "options": ["LM → bias_gate → поточечные фильтры → trimmed_refit → linear_init → bootstrap", "Поточечные фильтры → linear_init или RANSAC → LM → trimmed_refit → bias_gate → LM", "bias_gate → trimmed_refit → linear_init → LM → поточечные фильтры → RANSAC", "linear_init → поточечные фильтры → bootstrap → LM → bias_gate → trimmed_refit"], "correct": 1, "explain": "Сначала убрать то, что не на сфере, затем получить робастный старт, затем геометрический фит; после него можно судить об остатках точек и о смещении сканов; финальный LM переоценивает на выживших данных.", "usage": {"code": true, "without": "fit = refine_lm(raw_scans, np.eye(4), None, R)  # мусор и отражения в фите", "with": "clean → linear_init → refine_lm → trimmed_refit → bias_gate → refine_lm", "benefit": "Каждый шаг готовит данные для следующего"}}, {"q": "Какие фильтры применить к профилю, где лазер выходит за край сферы и захватывает стол, а часть точек — блики?", "options": ["VoxelDownsample для равномерной плотности и Subsample для ускорения последующего фита", "PoseRange для отбора поз фланца и StandoffRange для ограничения дальности до сферы", "BiasGate для целых сканов и TrimmedRefit для точек по остаткам после первого фита", "EdgeTrim для краёв профиля и CircleResidualGate для точек вне окружности сечения"], "correct": 3, "explain": "Стол и блики видны уже на уровне одного профиля: они не лежат на дуге окружности. Гейты по позам и сканам работают на другом уровне и не помогут отдельным точкам.", "usage": {"code": true, "without": "mask = np.ones(N, bool)  # стол попадает в фит как часть сферы", "with": "keep = edge_trim_mask(valid, k=5) & circle_residual_mask(x, z, thresh)", "benefit": "Мусор убирается до того, как испортит фит"}}, {"q": "Все сканы сделаны при сечениях, лежащих строго по одну сторону от центра сферы. Что вырождается?", "options": ["Перенос t_FS становится ненаблюдаемым, потому что все смещения y_off равны по модулю", "Столбец r₂ поворота: одинаковые знаки y_off не дают независимой информации", "Центр сферы не определяется, потому что нет ни одного экваториального сечения", "Радиус R не восстанавливается, потому что r < R во всех профилях без исключения"], "correct": 1, "explain": "Восстановление r₂ в linear_init опирается на разные знаки y_off. При одном знаке столбец коррелирует с t_FS и центром. Нужны сечения по обе стороны, лучше и близкие к экватору.", "usage": {"code": true, "without": "# планирование: 40 проходов по одной дуге над сферой", "with": "# планирование: проходы через центр и по обе стороны, с наклоном фланца", "benefit": "Разнообразие сечений — часть геометрии эксперимента"}}, {"q": "Что показывает coverage_map и какую ошибку планирования сканов он выявляет?", "options": ["Гистограмму занятости сферы по азимуту и полярному углу; скан одной шапки плохо задаёт центр по x и y", "Карту плотности точек в плоскости лазера; выявляет неравномерный шаг профиля по x", "Гистограмму остатков по сканам; выявляет систематическое смещение отдельных сканов", "Распределение поз фланца по углам; выявляет недостаток вращений между сканами"], "correct": 0, "explain": "Центр сферы определяется теми направлениями, с которых она видна. Если все точки на полюсе, ограничения в плоскости xy слабы, и это отразится в sigma_center.", "usage": {"code": true, "without": "# все проходы сверху: sigma_center_mm = [2.1, 1.9, 0.05]", "with": "cov = coverage_map(points_w, center, bins=(36, 18))  # stats.py", "benefit": "Видно, куда ещё надо посмотреть"}}, {"q": "LM завершился с сообщением о вырожденном якобиане и covariance_error в info. Какие две причины наиболее вероятны?", "options": ["Слишком много точек в одной сессии или слишком малый huber_delta при loss='linear'", "Неверный формат pose6 или радиус, переданный в миллиметрах вместо метров", "Одинаковая ориентация фланца во всех сканах или все сечения экваториальные", "Слишком большой max_nfev или xtol, заданный меньше машинной точности"], "correct": 2, "explain": "JᵀJ вырождена, когда часть T_FS ненаблюдаема: без вращения перенос сливается с центром, при y_off = 0 у всех столбец r₂ не входит в уравнения. Ошибка ловится и записывается в info, а не скрывается.", "usage": {"code": true, "without": "fit.info['sigma_t_mm']  # KeyError: ковариации нет", "with": "if 'covariance_error' in fit.info: print(pose_diversity(...))", "benefit": "Сообщение об ошибке указывает на геометрию данных"}}, {"q": "У сессии 0.1.0 и 0.1.1 одного приложения теги указывают на один коммит. Какой принцип калибровочного инструмента это нарушает по аналогии?", "options": ["Результат должен однозначно соответствовать состоянию, из которого получен, как history в CalibResult", "Радиус сферы нельзя менять между сессиями одного приложения без повторной калибровки", "Сканы одной сессии должны иметь одинаковую ориентацию фланца для сопоставимости", "Центры разных сессий обязаны совпадать в пределах сигмы, иначе сессии объединяются"], "correct": 0, "explain": "CalibResult хранит history — из каких узлов и с какими параметрами получен T_FS. Результат без однозначного происхождения невоспроизводим, будь то калибровка или релиз.", "usage": {"code": true, "without": "result.json без history и без sources  # откуда взялось T_FS — неизвестно", "with": "calib.history.append('lm_refine(loss=huber, f_scale=2mm)')  # calib_from_fit", "benefit": "Каждое число можно проследить до данных и шагов"}}, {"q": "Поза приходит как [x, y, z, rx, ry, rz] в мм и градусах. Что делает se3_from_pose_mm_deg и где чаще всего ошибаются?", "options": ["Умножает перенос на 1000 и строит R через внутренние 'XYZ', как в scipy по умолчанию", "Переводит углы в радианы и оставляет перенос в мм ради точности вычислений", "Делит перенос на 1000 и строит R через внешние 'xyz'; типичная ошибка — подать мм без деления", "Строит R по соглашению KUKA A/B/C независимо от типа робота, указанного в данных"], "correct": 2, "explain": "Внутри всё в метрах и радианах, наружу — мм и градусы. Каждое ·1e3 и /1000.0 в коде — такая граница. Для KUKA A/B/C используется kinematics.robot_rotation с RobotType.", "usage": {"code": true, "without": "T[:3,3] = pose6[:3]  # мм как метры: сфера в 300 км от робота", "with": "T = make_se3(matrix_from_euler_xyz_deg(*pose6[3:]), pose6[:3]/1000.0)", "benefit": "Единицы конвертируются в одном месте"}}, {"q": "Почему после calibration результат сравнивают через compare_se3, а не по разности элементов матриц?", "options": ["Она даёт разность переносов в мм и геодезический угол в градусах — величины с физическим смыслом", "Разность матриц не определена для SE(3), потому что группа не является векторным пространством", "compare_se3 учитывает радиус сферы и масштабирует ошибку к размеру мишени", "Разность элементов чувствительна к порядку умножения, а compare_se3 от него не зависит"], "correct": 0, "explain": "Угол берётся из arccos((tr(R_aᵀR_b) − 1)/2). Норма разности матриц смешивает единицы и не говорит, на сколько градусов и миллиметров разошлись две калибровки.", "usage": {"code": true, "without": "err = np.linalg.norm(T1 - T2)  # число без единиц и смысла", "with": "dt_mm, dang_deg = compare_se3(T1, T2)  # se3.py", "benefit": "Разница выражена в тех же единицах, что и допуск"}}, {"q": "Сфера R = 25 мм, окружность сечения радиуса r = 15 мм. На каком расстоянии центр сферы от плоскости лазера?", "options": ["20 мм", "10 мм", "29,15 мм", "40 мм"], "correct": 0, "explain": "Шаг 1: r² + y_off² = R². Шаг 2: y_off² = 625 − 225 = 400. Шаг 3: y_off = 20 мм. Ошибки: 10 мм — вычли радиусы; 29,15 — сложили квадраты; 40 — удвоили.", "usage": {"code": true, "without": "y_off = R - r  # 10 мм, неверно", "with": "y_off = np.sqrt(R**2 - r**2)  # 20 мм", "benefit": "Пифагор в сечении сферы"}}, {"q": "Алгебраическая подгонка окружности дала решение [xc, zc, k] = [3, 4, 75] для системы 2x·xc + 2z·zc + k = x² + z². Чему равен радиус?", "options": ["8,66", "10", "5", "75"], "correct": 1, "explain": "Шаг 1: r² = k + xc² + zc². Шаг 2: 75 + 9 + 16 = 100. Шаг 3: r = 10. Ошибки: 8,66 — взяли √75; 5 — только √(xc²+zc²); 75 — забыли извлечь корень.", "usage": {"code": true, "without": "r = np.sqrt(sol[2])  # 8.66, забыли центр", "with": "r2 = sol[2] + xc**2 + zc**2; r = np.sqrt(max(r2, 0))  # fit_circle_2d", "benefit": "Радиус восстанавливается через центр"}}, {"q": "След матрицы R_aᵀR_b равен 2. Каков геодезический угол между двумя вращениями?", "options": ["30°", "90°", "60°", "120°"], "correct": 2, "explain": "Шаг 1: cos θ = (tr − 1)/2 = (2 − 1)/2 = 0,5. Шаг 2: θ = arccos 0,5 = 60°. Ошибки: 30 — взяли arcsin; 90 — забыли вычесть 1; 120 — знак.", "usage": {"code": true, "without": "theta = np.degrees(np.arccos(trace / 2))  # 0°, неверно", "with": "c = np.clip((np.trace(Rd) - 1) / 2, -1, 1); theta = np.degrees(np.arccos(c))", "benefit": "Формула угла из следа"}}, {"q": "Остаток точки 5 мм при huber_delta = 2 мм. Какой вес получит точка в IRLS и во сколько раз уменьшится её вклад в сумму w·r²?", "options": ["Вес 0,16; вклад падает в 6,25 раза", "Вес 0,4; вклад падает в 2,5 раза", "Вес 2,5; вклад растёт в 2,5 раза", "Вес 0; точка исключена"], "correct": 1, "explain": "Шаг 1: |r| > δ, значит w = δ/|r| = 2/5 = 0,4. Шаг 2: вклад w·r² = 0,4·25 = 10 вместо 25, то есть в 2,5 раза меньше. Ошибка 0,16 — возвели вес в квадрат; 0 — спутали с тримом.", "usage": {"code": true, "without": "w = (delta / r)**2  # 0.16, лишний квадрат", "with": "w = delta / abs(r) if abs(r) > delta else 1.0  # 0.4", "benefit": "Влияние выброса ограничено линейно"}}, {"q": "Скан имеет 1200 точек, m = 30 сканов по 1200 точек, p = 6 + 3·2 параметров, сумма квадратов остатков 0,0009 м². Оцените σ² для ковариации LM.", "options": ["3·10⁻⁵ м²", "2,5·10⁻⁸ м²", "7,5·10⁻⁵ м²", "2,5·10⁻⁵ м²"], "correct": 1, "explain": "Шаг 1: m = 36000 остатков, p = 12. Шаг 2: dof = 35988 ≈ 36000. Шаг 3: σ² = 0,0009/36000 = 2,5·10⁻⁸ м², то есть σ ≈ 0,16 мм. Ошибка 3·10⁻⁵ — делили на число сканов; 7,5·10⁻⁵ — на p.", "usage": {"code": true, "without": "s2 = np.sum(res**2) / len(scans)  # делим на сканы, а не на точки", "with": "m, p = J.shape; s2 = np.sum(sol.fun**2) / max(m - p, 1)  # refine_lm", "benefit": "Дисперсия остатка на одну точку"}}, {"q": "Начало сканера t₀ = [0, 0, 0,2] м. Неопределённость угла вокруг оси x равна 0,001 рад, вращение и перенос не коррелированы, σ_v = 0. Какова σ переноса по оси y из-за плеча?", "options": ["0 мм", "2 мм", "0,02 мм", "0,2 мм"], "correct": 3, "explain": "Шаг 1: δt = v + ω × t₀; для ω = (ω_x, 0, 0) и t₀ = (0, 0, 0,2): ω × t₀ = (0, −0,2·ω_x, 0). Шаг 2: σ_ty = 0,2·0,001 = 2·10⁻⁴ м = 0,2 мм. Ошибка 0 — забыли плечо; 2 мм — на порядок; 0,02 — на порядок в другую сторону.", "usage": {"code": true, "without": "sigma_t = sqrt(diag(cov_xi[:3,:3]))  # 0: плечо проигнорировано", "with": "Jt = hstack([eye(3), -hat_so3(t0)]); cov_t = Jt @ cov_xi @ Jt.T  # 0.2 мм по y", "benefit": "Вращение вокруг фланца двигает сканер"}}, {"q": "Смещения 10 активных сканов имеют σ_bias = 0,05 мм при k_sigma = 3. Два скана имеют смещения +0,12 и −0,17 мм. Сколько сканов деактивирует первый раунд bias_gate?", "options": ["Один: скан со смещением −0,17 мм", "Два: оба скана", "Ни одного", "Три: любые с |bias| > σ"], "correct": 0, "explain": "Шаг 1: порог = k·σ = 0,15 мм. Шаг 2: |+0,12| < 0,15 — остаётся; |−0,17| > 0,15 — выбывает. Шаг 3: раунд сработает, так как активных больше min_scans = 6. Ошибка «оба» — сравнили с σ, а не с 3σ.", "usage": {"code": true, "without": "dropped = [r for r in active if abs(r['bias_mm']) > sigma]  # порог без k", "with": "thr = k_sigma * sigma; dropped = [r for r in active if abs(r['bias_mm']) > thr]", "benefit": "Порог по знаку и по величине"}}, {"q": "Из 48 знаковых перестановок осей сколько являются собственными вращениями, и сколько запусков LM сделает orientation_sweep при max_nfev=100?", "options": ["48 вращений и 48 запусков", "24 вращения и 24 запуска", "24 вращения и 100 запусков", "6 вращений и 6 запусков"], "correct": 1, "explain": "Шаг 1: 6 перестановок × 8 знаков = 48. Шаг 2: det = +1 ровно у половины — 24. Шаг 3: по одному refine_lm на матрицу; max_nfev — предел вызовов функции внутри одного запуска, а не число запусков.", "usage": {"code": true, "without": "rots = all_signed_permutations()  # 48, половина — отражения", "with": "rots = orthogonal_rotations_24(); assert len(rots) == 24", "benefit": "Отражения не могут быть ориентацией сканера"}}, {"q": "Точка сканера p_S = (0, 0, 0,1) м; T_FS — единичное вращение и перенос (0, 0, 0,05); T_WF — единичное; центр сферы c = (0, 0, 0,12), R = 0,025. Каков остаток точки?", "options": ["+0,005 м, точка снаружи сферы", "−0,005 м, точка внутри сферы", "+0,03 м, точка снаружи сферы", "0 м, точка на поверхности"], "correct": 0, "explain": "Шаг 1: p_F = p_S + t_FS = (0, 0, 0,15). Шаг 2: p_W = p_F. Шаг 3: ‖p_W − c‖ = 0,03; r = 0,03 − 0,025 = +0,005 м. Ошибка −0,005 — перепутан знак; 0,03 — забыли вычесть R.", "usage": {"code": true, "without": "r = np.linalg.norm(p_w - c)  # 0.03, забыли R", "with": "r = np.linalg.norm(p_w - c) - R  # +0.005, снаружи", "benefit": "Знак говорит, с какой стороны поверхности точка"}}, {"q": "Профиль: R = 25 мм, круг сечения r = 24 мм, центр окружности в системе сканера (xc, zc) = (2, 80) мм, центр сферы по y лежит на положительной стороне. Каковы координаты центра сферы в системе сканера и расстояние до него?", "options": ["c_S = (2, 1, 80) мм; standoff ≈ 80,0 мм", "c_S = (2, 24, 80) мм; standoff ≈ 83,6 мм", "c_S = (2, 0, 80) мм; standoff ≈ 80,0 мм", "c_S = (2, 7, 80) мм; standoff ≈ 80,3 мм"], "correct": 3, "explain": "Шаг 1: y_off = √(625 − 576) = √49 = 7 мм, знак +. Шаг 2: c_S = (2, 7, 80). Шаг 3: standoff = √(4 + 49 + 6400) = √6453 ≈ 80,3 мм. Ошибка 1 мм — вычли радиусы; 24 — взяли r; 0 — сочли сечение экваториальным.", "usage": {"code": true, "without": "c_s = (xc, 0, zc)  # экваториальное допущение, ошибка 7 мм", "with": "y = np.sqrt(R**2 - r**2); c_s = (xc, +y, zc); standoff = np.linalg.norm(c_s)", "benefit": "Стандофф и смещение — из одной формулы"}}];
+  const STORAGE_KEY = "learntest_" + TEST_ID;
+  const BLOCK_NAMES = [
+    "Теоретический фундамент",
+    "Углублённая теория",
+    "Анализ и проектирование",
+    "Синтез и кейсы",
+    "Практика и расчёты"
+  ];
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return { current: 0, answers: {} };
+  }
+  function saveState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  // Fisher-Yates shuffle (returns a new array, does not mutate input)
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+    }
+    return a;
+  }
+
+  // Builds a fresh, randomized copy of QUESTIONS: each question's options are
+  // shuffled and its correct-answer index remapped to match. Every other field
+  // (q, explain, usage, ...) is carried over untouched. Regenerated on every
+  // page load and on every "reset progress" click (never persisted), so the
+  // position of the correct answer can't be memorized across attempts.
+  function buildShuffledQuestions() {
+    return QUESTIONS.map(q => {
+      const order = shuffle(q.options.map((_, i) => i));
+      return Object.assign({}, q, {
+        options: order.map(i => q.options[i]),
+        correct: order.indexOf(q.correct)
+      });
+    });
+  }
+
+  let state = loadState();
+  let SHUFFLED = buildShuffledQuestions();
+
+  const quizArea = document.getElementById("quizArea");
+  const resultArea = document.getElementById("resultArea");
+  const progressFill = document.getElementById("progressFill");
+  const progressText = document.getElementById("progressText");
+  const blockLabel = document.getElementById("blockLabel");
+
+  function blockOf(idx) { return Math.floor(idx / 10); }
+
+  function render() {
+    if (state.current >= QUESTIONS.length) {
+      renderResult();
+      return;
+    }
+    resultArea.style.display = "none";
+    quizArea.style.display = "block";
+
+    const idx = state.current;
+    const q = SHUFFLED[idx];
+    const answered = state.answers[idx];
+
+    progressFill.style.width = Math.round((idx / QUESTIONS.length) * 100) + "%";
+    progressText.textContent = (idx + 1) + " / " + QUESTIONS.length;
+    blockLabel.textContent = "Блок " + (blockOf(idx) + 1) + ": " + BLOCK_NAMES[blockOf(idx)];
+
+    let html = '<div class="card">';
+    html += '<div class="question">' + renderQuestion(q.q) + '</div>';
+    html += '<div class="qsearch"><a class="iconbtn" target="_blank" rel="noopener" href="https://www.google.com/search?q=' + encodeURIComponent(questionSearchText(q.q)) + '">🔍 Найти в Google</a></div>';
+    html += '<div class="options">';
+    q.options.forEach((opt, i) => {
+      let cls = "opt";
+      if (answered) {
+        cls += " disabled";
+        if (i === q.correct) cls += " correct";
+        else if (opt === answered.selectedText && !answered.correct) cls += " wrong";
+        else cls += " dim";
+      }
+      html += '<button class="' + cls + '" data-i="' + i + '">' + renderOption(opt) + '</button>';
+    });
+    html += '</div>';
+    html += '<div class="explain' + (answered ? ' show' : '') + '" id="explainBox">' + escapeHtml(q.explain || "") + '</div>';
+    if (q.usage) {
+      const u = q.usage;
+      const wrap = (s) => u.code ? ('<pre>' + escapeHtml(s || "") + '</pre>') : ('<div class="u-text">' + escapeHtml(s || "") + '</div>');
+      html += '<div class="usage' + (answered ? ' show' : '') + '">';
+      html += '<div class="u-part u-without"><div class="u-label">Без этого</div>' + wrap(u.without) + '</div>';
+      html += '<div class="u-part u-with"><div class="u-label">С этим</div>' + wrap(u.with) + '</div>';
+      if (u.benefit) html += '<div class="u-benefit">✅ Выгода: ' + escapeHtml(u.benefit) + '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+    html += '<div class="nav">';
+    html += '<button class="btn secondary" id="prevBtn"' + (idx === 0 ? ' disabled' : '') + '>Назад</button>';
+    html += '<button class="btn" id="nextBtn"' + (answered ? '' : ' disabled') + '>' + (idx === QUESTIONS.length - 1 ? 'Завершить' : 'Далее') + '</button>';
+    html += '</div>';
+
+    quizArea.innerHTML = html;
+
+    quizArea.querySelectorAll(".opt").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (state.answers[idx]) return;
+        const sel = parseInt(btn.dataset.i, 10);
+        state.answers[idx] = { selectedText: q.options[sel], correct: sel === q.correct };
+        saveState();
+        render();
+      });
+    });
+    document.getElementById("prevBtn").addEventListener("click", () => {
+      state.current = Math.max(0, idx - 1);
+      saveState();
+      render();
+    });
+    document.getElementById("nextBtn").addEventListener("click", () => {
+      state.current = idx + 1;
+      saveState();
+      render();
+    });
+  }
+
+  function renderResult() {
+    quizArea.style.display = "none";
+    resultArea.style.display = "block";
+    progressFill.style.width = "100%";
+    progressText.textContent = QUESTIONS.length + " / " + QUESTIONS.length;
+    blockLabel.textContent = "Тест завершён";
+
+    let correct = 0;
+    const blockStats = [0, 0, 0, 0, 0];
+    const blockTotals = [0, 0, 0, 0, 0];
+    QUESTIONS.forEach((q, i) => {
+      const b = blockOf(i);
+      blockTotals[b]++;
+      if (state.answers[i] && state.answers[i].correct) {
+        correct++;
+        blockStats[b]++;
+      }
+    });
+
+    let html = '<div class="card result">';
+    html += '<div class="score">' + correct + ' / ' + QUESTIONS.length + '</div>';
+    html += '<div style="color:var(--muted); margin-top:6px;">правильных ответов</div>';
+    html += '<div class="blockscores">';
+    BLOCK_NAMES.forEach((name, i) => {
+      html += '<div class="row"><span>' + (i + 1) + '. ' + name + '</span><span>' + blockStats[i] + ' / ' + blockTotals[i] + '</span></div>';
+    });
+    html += '</div></div>';
+    html += '<div class="nav"><button class="btn" id="reviewBtn">Пересмотреть ответы</button></div>';
+    resultArea.innerHTML = html;
+
+    document.getElementById("reviewBtn").addEventListener("click", () => {
+      state.current = 0;
+      render();
+    });
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s == null ? "" : s;
+    return div.innerHTML;
+  }
+
+  // Текст вопроса может нести фрагменты кода в тройных кавычках: они идут в
+  // <pre> моноширинным шрифтом, остальное — как обычный текст. Вопрос без
+  // тройных кавычек рендерится ровно как раньше.
+  function renderQuestion(text) {
+    const parts = String(text == null ? "" : text).split("```");
+    let out = "";
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 1) out += '<pre class="qcode">' + escapeHtml(parts[i].replace(/^\n/, "").replace(/\n$/, "")) + '</pre>';
+      else if (parts[i]) out += escapeHtml(parts[i]);
+    }
+    return out;
+  }
+
+  // Поиск в Google — по тексту вопроса без фрагментов кода.
+  function questionSearchText(text) {
+    const parts = String(text == null ? "" : text).split("```");
+    return parts.filter(function (_, i) { return i % 2 === 0; }).join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  // Вариант ответа целиком в обратных кавычках — это код, моноширинно.
+  function renderOption(opt) {
+    const s = String(opt == null ? "" : opt);
+    if (s.length > 2 && s.charAt(0) === "`" && s.charAt(s.length - 1) === "`") {
+      return '<code class="optcode">' + escapeHtml(s.slice(1, -1)) + '</code>';
+    }
+    return escapeHtml(s);
+  }
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    if (confirm("Сбросить весь прогресс этого теста?")) {
+      state = { current: 0, answers: {} };
+      SHUFFLED = buildShuffledQuestions();
+      saveState();
+      render();
+    }
+  });
+
+  render();
+
+  // ---- Синхронизация всех тестов (Google Drive), общий модуль sync.js ----
+  const toastEl = document.getElementById("toast");
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    setTimeout(() => toastEl.classList.remove("show"), 2500);
+  }
+
+  const syncModal = document.getElementById("syncModal");
+  const syncStatus = document.getElementById("syncStatus");
+  const uploadBtn = document.getElementById("syncUploadBtn");
+  const downloadBtn = document.getElementById("syncDownloadBtn");
+
+  function setBusy(busy) { uploadBtn.disabled = busy; downloadBtn.disabled = busy; }
+
+  document.getElementById("syncBtn").addEventListener("click", () => {
+    if (!window.LTSync || !LTSync.configured()) {
+      toast("Синхронизация не настроена: укажите GOOGLE_CLIENT_ID в config.js");
+      return;
+    }
+    syncStatus.textContent = LTSync.hasToken()
+      ? "Google уже подключён — вход не потребуется."
+      : "Один вход — синхронизируются сразу все тесты.";
+    syncModal.classList.add("show");
+  });
+  document.getElementById("syncCloseBtn").addEventListener("click", () => syncModal.classList.remove("show"));
+
+  uploadBtn.addEventListener("click", () => {
+    setBusy(true);
+    syncStatus.textContent = "Отправка…";
+    LTSync.uploadAll({
+      onProgress: (d, t) => { syncStatus.textContent = "Отправка… " + d + "/" + t; },
+      onDone: (ok, failed) => {
+        setBusy(false);
+        toast(failed ? ("Отправлено " + ok + ", ошибок: " + failed) : ("Отправлено тестов: " + ok));
+        syncModal.classList.remove("show");
+      },
+      onError: (msg) => { setBusy(false); toast(msg); syncStatus.textContent = msg; }
+    });
+  });
+
+  downloadBtn.addEventListener("click", () => {
+    if (!confirm("Заменить локальный прогресс всех тестов данными из Drive?")) return;
+    setBusy(true);
+    syncStatus.textContent = "Загрузка…";
+    LTSync.downloadAll({
+      onProgress: (d, t) => { syncStatus.textContent = "Загрузка… " + d + "/" + t; },
+      onDone: (ok, failed) => {
+        setBusy(false);
+        state = loadState();
+        render();
+        toast(failed ? ("Загружено " + ok + ", ошибок: " + failed) : ("Загружено тестов: " + ok));
+        syncModal.classList.remove("show");
+      },
+      onError: (msg) => { setBusy(false); toast(msg); syncStatus.textContent = msg; }
+    });
+  });
+})();
+</script>
+</body>
+</html>
