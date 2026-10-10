@@ -101,6 +101,8 @@ TOPICS = {
     "rcf_pid_control_tuning_advanced_structures": {"title": "RCF 5: PID-регулирование, настройка, каскад и feedforward", "sim": ""},
     "rcf_digital_control_sampling_z_domain": {"title": "RCF 6: Цифровое управление: дискретизация, z-область, частота выборки", "sim": ""},
     "rcf_sensors_signal_conditioning_control_paradigms": {"title": "RCF 7: Датчики роботов, фильтрация, парадигмы и интеллектуальное управление", "sim": ""},
+    "robotics_modelling_kinematics_dynamics_trajectories": {"title": "RMO: Моделирование роботов: DH, якобиан, динамика, траектории, валидация", "sim": ""},
+    "trends_challenges_critical_reading_and_research_gaps": {"title": "TRC: Тренды и вызовы: критическое чтение, состояние области, research gap", "sim": ""},
 }
 
 
