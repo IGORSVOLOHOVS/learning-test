@@ -50,6 +50,13 @@
     font-weight: 500; font-size: .8rem; border: 1px solid var(--border);
     border-radius: 999px; padding: 2px 10px;
   }
+  /* курс внутри группы: TSI DSP 1..8 — одна строка, раскрывается касанием */
+  details.course { margin: 0 0 12px; border: 1px dashed var(--border); border-radius: 14px; padding: 0 10px; }
+  details.course > summary { font-size: .9rem; padding: 12px 4px; }
+  details.course[open] { padding-bottom: 2px; }
+  .card.continue { border-color: var(--accent); }
+  .card .kicker { font-size: .78rem; color: var(--accent); font-weight: 600; margin-bottom: 4px; }
+  .syncline { font-size: .82rem; color: var(--muted); margin: -12px 0 16px; cursor: pointer; }
   .topbar { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 6px; }
   .iconbtn {
     background: none; border: 1px solid var(--border); color: var(--muted);
@@ -88,6 +95,7 @@
     <button class="iconbtn" id="syncBtn">☁️ Синхронизировать всё</button>
   </div>
   <div class="subtitle" id="subtitle">50 вопросов в каждом тесте · прогресс сохраняется на устройстве</div>
+  <div class="syncline" id="syncLine"></div>
   <div id="list"></div>
 </div>
 
@@ -97,13 +105,15 @@
   <div class="modal">
     <h3>Синхронизация всех тестов с Google Drive</h3>
     <p id="syncStatus" style="color:var(--muted); font-size:.9rem;">Один вход — синхронизируются сразу все тесты.</p>
-    <button class="btn" id="syncUploadBtn">⬆️ Отправить весь прогресс в Drive</button>
+    <button class="btn" id="syncMergeBtn">🔄 Синхронизировать (свежее побеждает)</button>
+    <button class="btn secondary" id="syncUploadBtn">⬆️ Отправить весь прогресс в Drive</button>
     <button class="btn secondary" id="syncDownloadBtn">⬇️ Загрузить весь прогресс из Drive</button>
     <button class="btn secondary" id="syncCloseBtn">Закрыть</button>
   </div>
 </div>
 
 <script src="config.js"></script>
+<script src="progress.js"></script>
 <script src="sync.js"></script>
 <script>
   const TESTS = [
@@ -183,13 +193,39 @@
     TESTS.length + " " + plural(TESTS.length, "тест", "теста", "тестов") +
     " · 50 вопросов в каждом · прогресс сохраняется на устройстве";
 
-  // Три группы вместо одной ленты: сверху то, что проходишь сейчас; остальное
-  // свёрнуто. "Не начаты" открыта сама только когда начатых нет - иначе это
-  // снова длинная лента. Раскрыл или свернул вручную - запоминается.
+  const SIMS = [
+    ["assembly", "Ассемблер: визуализатор регистров и стека"],
+    ["calculus", "Матанализ: лаборатория производной"],
+    ["computer_vision", "Computer Vision: лаборатория свёртки"],
+    ["diffusers", "Diffusers: лаборатория диффузии"],
+    ["electronics", "Электроника: лаборатория цепи"],
+    ["facial_emotion_recognition", "Эмоции: детектив мимики"],
+    ["first_impression", "Первое впечатление: интервью-квест"],
+    ["iso_standards", "ISO: симулятор сертификации"],
+    ["linear_algebra", "Линейная алгебра: лаборатория преобразований"],
+    ["low_level_cpp", "C++: визуализатор стека и кучи"],
+    ["network_drivers", "Сетевые драйверы: кольцевой буфер"],
+    ["performance_optimization", "Оптимизация: визуализатор профиля"],
+    ["photography_exposure", "Фотография: лаборатория экспозиции"],
+    ["physical_chemistry", "Физическая химия: лаборатория реакции"],
+    ["probability_statistics", "Вероятность: доска Гальтона"],
+    ["python_numpy_matplotlib", "NumPy: лаборатория broadcasting"],
+    ["tiktok_algorithm", "TikTok: симулятор автора"],
+    ["visual_math", "Визуальная математика: градиентный спуск"],
+    ["world_models", "World Models: лаборатория прогноза"],
+    ["yocto_bitbake_devtool", "devtool: рецепт, патчи и исходники"]
+  ];
+
+  // Группы сверху вниз. open(b) — раскрыта ли по умолчанию; раскрыл или свернул
+  // вручную — запоминается и дальше главнее умолчания.
   const GROUPS = [
+    { key: "review", title: "Пора повторить", open: () => true },
     { key: "progress", title: "В процессе", open: () => true },
-    { key: "todo", title: "Не начаты", open: (b) => b.progress.length === 0 },
+    { key: "mistakes", title: "Работа над ошибками", open: () => false },
+    // сама открыта, только когда больше нечем заняться, иначе это снова лента
+    { key: "todo", title: "Не начаты", open: (b) => !b.progress.length && !b.review.length },
     { key: "done", title: "Выполнены", open: () => false },
+    { key: "labs", title: "Лаборатории", open: () => false },
   ];
   // Не "learntest_": sync.js отправляет в Drive каждый ключ с этим префиксом как тест.
   const OPEN_KEY = "ltindex_open";
@@ -201,48 +237,131 @@
     open[key] = isOpen;
     try { localStorage.setItem(OPEN_KEY, JSON.stringify(open)); } catch (e) {}
   }
+  function loadTest(slug) {
+    try { return JSON.parse(localStorage.getItem("learntest_" + slug)); } catch (e) { return null; }
+  }
+  function fmtDate(ms) {
+    return new Date(ms).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  }
+
+  function testCard(slug, title, state, kind) {
+    const total = LTProgress.TOTAL;
+    const current = state ? (state.current || 0) : 0;
+    const done = LTProgress.isDone(state);
+    const pct = done ? 100 : Math.round((Math.min(current, total) / total) * 100);
+    let href = "tests/" + slug + ".html";
+    let label;
+    if (kind === "review") {
+      href += "?mode=review";
+      const due = LTProgress.reviewDue(state);
+      label = "Повторить " + LTProgress.REVIEW_SIZE + " вопросов · " + (due === 0 ? "дата прохождения неизвестна" : "срок был " + fmtDate(due));
+    } else if (kind === "mistakes") {
+      href += "?mode=mistakes";
+      label = "Ошибок к исправлению: " + LTProgress.mistakes(state).length;
+    } else if (done) {
+      label = "Завершено: " + LTProgress.correctCount(state) + "/" + total;
+    } else {
+      label = LTProgress.answeredCount(state) > 0 ? ("Пройдено " + current + "/" + total) : "Не начато";
+    }
+    const a = document.createElement("a");
+    a.className = "card";
+    a.href = href;
+    a.innerHTML =
+      '<h2>' + title + '</h2>' +
+      '<div class="meta"><span>' + label + '</span><span>' + (kind === "mistakes" || kind === "review" ? "" : pct + '%') + '</span></div>' +
+      (kind === "mistakes" || kind === "review" ? "" :
+        '<div class="progress-mini' + (done ? ' done' : '') + '"><div style="width:' + pct + '%"></div></div>');
+    return a;
+  }
+
+  function simCard(slug, title) {
+    const a = document.createElement("a");
+    a.className = "card";
+    a.href = "sims/" + slug + ".html";
+    a.innerHTML = '<h2>🔬 ' + title + '</h2>';
+    return a;
+  }
+
+  function section(key, title, nodes, defaultOpen, cls) {
+    const remembered = loadOpen();
+    const details = document.createElement("details");
+    details.className = cls;
+    details.dataset.group = key;
+    details.open = key in remembered ? !!remembered[key] : defaultOpen;
+    const summary = document.createElement("summary");
+    summary.innerHTML = '<span class="title">' + title + '</span><span class="count">' + nodes.length + '</span>';
+    details.appendChild(summary);
+    nodes.forEach(n => details.appendChild(n));
+    details.addEventListener("toggle", () => saveOpen(key, details.open));
+    return details;
+  }
+
+  // Курсы TSI из двух и больше тестов в одной группе сворачиваются в одну строку.
+  function withCourses(groupKey, items) {
+    const byCourse = {};
+    items.forEach(it => {
+      const c = LTProgress.courseOf(it.title);
+      if (c) (byCourse[c] = byCourse[c] || []).push(it);
+    });
+    const out = [], placed = {};
+    items.forEach(it => {
+      const c = LTProgress.courseOf(it.title);
+      if (!c || byCourse[c].length < 2) { out.push(it.el); return; }
+      if (placed[c]) return;
+      placed[c] = true;
+      out.push(section(groupKey + ":" + c, c, byCourse[c].map(x => x.el), false, "course"));
+    });
+    return out;
+  }
+
+  // «Продолжить»: последний открытый тест, если он не пройден; иначе самый
+  // свежий из начатых. Тест сам открывается на state.current — нужном вопросе.
+  function continueCard() {
+    const titles = {};
+    TESTS.forEach(([slug, title]) => { titles[slug] = title; });
+    let last = null;
+    try { last = JSON.parse(localStorage.getItem("ltindex_last")); } catch (e) {}
+    let pick = null;
+    if (last && titles[last.slug] && LTProgress.status(loadTest(last.slug)) === "progress") pick = last.slug;
+    if (!pick) {
+      let best = -1;
+      TESTS.forEach(([slug]) => {
+        const s = loadTest(slug);
+        if (LTProgress.status(s) === "progress" && (s.updatedAt || 0) > best) { best = s.updatedAt || 0; pick = slug; }
+      });
+    }
+    if (!pick) return null;
+    const s = loadTest(pick);
+    const a = document.createElement("a");
+    a.className = "card continue";
+    a.href = "tests/" + pick + ".html";
+    a.innerHTML = '<div class="kicker">▶ Продолжить</div><h2>' + titles[pick] + '</h2>' +
+      '<div class="meta"><span>Вопрос ' + Math.min((s.current || 0) + 1, LTProgress.TOTAL) + ' из ' + LTProgress.TOTAL + '</span></div>';
+    return a;
+  }
 
   function renderList() {
     list.innerHTML = "";
-    const buckets = { progress: [], todo: [], done: [] };
+    const now = Date.now();
+    const buckets = { review: [], progress: [], mistakes: [], todo: [], done: [], labs: [] };
     TESTS.forEach(([slug, title]) => {
-      let state = null;
-      try { state = JSON.parse(localStorage.getItem("learntest_" + slug)); } catch (e) {}
-      const total = 50;
-      const current = state ? state.current : 0;
-      const answered = state ? Object.keys(state.answers || {}).length : 0;
-      const done = current >= total;
-      const pct = Math.round((Math.min(current, total) / total) * 100);
-
-      let correct = 0;
-      if (state && state.answers) {
-        Object.values(state.answers).forEach(a => { if (a.correct) correct++; });
-      }
-
-      const a = document.createElement("a");
-      a.className = "card";
-      a.href = "tests/" + slug + ".html";
-      a.innerHTML =
-        '<h2>' + title + '</h2>' +
-        '<div class="meta"><span>' + (done ? ('Завершено: ' + correct + '/' + total) : (answered > 0 ? ('Пройдено ' + current + '/' + total) : 'Не начато')) + '</span><span>' + pct + '%</span></div>' +
-        '<div class="progress-mini' + (done ? ' done' : '') + '"><div style="width:' + pct + '%"></div></div>';
-      // Тот же признак, что и в подписи карточки, чтобы группа и текст не расходились.
-      buckets[done ? "done" : (answered > 0 ? "progress" : "todo")].push(a);
+      const state = loadTest(slug);
+      const st = LTProgress.status(state);
+      // Пройденный, которому пора на повторение, стоит только в «Пора повторить».
+      if (st === "done" && LTProgress.isReviewDue(state, now)) buckets.review.push({ title, el: testCard(slug, title, state, "review") });
+      else buckets[st].push({ title, el: testCard(slug, title, state, st) });
+      if (LTProgress.mistakes(state).length) buckets.mistakes.push({ title, el: testCard(slug, title, state, "mistakes") });
     });
+    SIMS.forEach(([slug, title]) => buckets.labs.push({ title, el: simCard(slug, title) }));
 
-    const remembered = loadOpen();
+    const cont = continueCard();
+    if (cont) list.appendChild(cont);
     GROUPS.forEach(group => {
-      const cards = buckets[group.key];
-      if (!cards.length) return;
-      const details = document.createElement("details");
-      details.className = "group";
-      details.dataset.group = group.key;
-      details.open = group.key in remembered ? !!remembered[group.key] : group.open(buckets);
-      const summary = document.createElement("summary");
-      summary.innerHTML = '<span class="title">' + group.title + '</span><span class="count">' + cards.length + '</span>';
-      details.appendChild(summary);
-      cards.forEach(card => details.appendChild(card));
-      details.addEventListener("toggle", () => saveOpen(group.key, details.open));
+      const items = buckets[group.key];
+      if (!items.length) return;
+      const details = section(group.key, group.title, withCourses(group.key, items), group.open(buckets), "group");
+      // счётчик группы — тесты, а не строки курсов
+      details.querySelector(".count").textContent = items.length;
       list.appendChild(details);
     });
   }
@@ -263,6 +382,7 @@
   function setBusy(busy) {
     uploadBtn.disabled = busy;
     downloadBtn.disabled = busy;
+    document.getElementById("syncMergeBtn").disabled = busy;
   }
 
   document.getElementById("syncBtn").addEventListener("click", () => {
@@ -276,6 +396,50 @@
     syncModal.classList.add("show");
   });
   document.getElementById("syncCloseBtn").addEventListener("click", () => syncModal.classList.remove("show"));
+
+  // ---- Синхронизация без кнопок ----
+  // Пока Google-токен жив (~час после любого входа), главная сливает прогресс сама
+  // при открытии, а страницы тестов тихо отправляют ответы. Истёк — строка под
+  // заголовком становится одним касанием: окно входа без касания браузер блокирует.
+  const syncLine = document.getElementById("syncLine");
+  function syncReport(s) {
+    const t = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    syncLine.textContent = "☁️ Синхронизировано в " + t +
+      (s.pulled || s.pushed ? " · получено " + s.pulled + ", отправлено " + s.pushed : " · всё совпадает") +
+      (s.failed ? " · ошибок " + s.failed : "");
+  }
+  function runSync(interactive) {
+    syncLine.textContent = "☁️ Синхронизация…";
+    LTSync.syncAll({
+      interactive: interactive,
+      onDone: (s) => { syncReport(s); if (s.pulled) renderList(); },
+      onError: (msg) => {
+        syncLine.textContent = msg === "no-token"
+          ? "☁️ Синхронизация выключена — коснись, чтобы включить на час"
+          : "☁️ " + msg + " — коснись, чтобы повторить";
+      }
+    });
+  }
+  if (window.LTSync && LTSync.configured()) {
+    syncLine.addEventListener("click", () => runSync(true));
+    runSync(false);
+  }
+
+  document.getElementById("syncMergeBtn").addEventListener("click", () => {
+    setBusy(true);
+    syncStatus.textContent = "Синхронизация…";
+    LTSync.syncAll({
+      interactive: true,
+      onDone: (s) => {
+        setBusy(false);
+        renderList();
+        syncReport(s);
+        toast("Получено " + s.pulled + ", отправлено " + s.pushed + (s.failed ? ", ошибок " + s.failed : ""));
+        syncModal.classList.remove("show");
+      },
+      onError: (msg) => { setBusy(false); toast(msg); syncStatus.textContent = msg; }
+    });
+  });
 
   uploadBtn.addEventListener("click", () => {
     setBusy(true);

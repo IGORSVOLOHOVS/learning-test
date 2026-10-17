@@ -10,6 +10,11 @@
 //
 // Формат хранения на Drive не меняется: один файл на тест — learntest_<id>.json,
 // содержимое совпадает с localStorage["learntest_<id>"].
+//
+//  3. syncAll — слияние по свежести (updatedAt, см. progress.js): само на главной,
+//     пока токен жив, и по кнопке. uploadOne — тихая отправка одного теста после
+//     ответа. Без живого токена (Google даёт его на ~час) автоматика молчит, а не
+//     открывает окно входа: всплывающее окно без касания браузер всё равно режет.
 (function () {
   var TOKEN_KEY = "gdrive_access_token";
   var TOKEN_EXP_KEY = "gdrive_token_expiry";
@@ -105,6 +110,17 @@
       .catch(function () { cb([]); });
   }
 
+  // Как listProgressFiles, но сбой — это null, а не пустой список. Иначе слияние
+  // приняло бы «Drive не ответил» за «в Drive ничего нет» и залило бы всё заново,
+  // а uploadFile без найденного файла создаёт ещё один с тем же именем.
+  function listProgressFilesStrict(token, cb) {
+    var q = "name contains '" + PROGRESS_PREFIX + "' and trashed=false";
+    fetch("https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent(q) + "&spaces=drive&fields=files(id,name)&pageSize=1000", { headers: authHeader(token) })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (d) { cb(d.files || []); })
+      .catch(function () { cb(null); });
+  }
+
   function uploadFile(token, filename, contentObj, cb) {
     findFile(token, filename, function (file) {
       var metadata = { name: filename, mimeType: "application/json" };
@@ -188,11 +204,78 @@
     }, cbs.onError || function () {});
   }
 
+  // Слияние вместо «отправить всё» / «заменить всё»: по каждому тесту побеждает
+  // более свежая копия (LTProgress.pickNewer), отстающая сторона обновляется.
+  // cbs: { interactive, onDone({pulled, pushed, same, failed}), onError(msg) }
+  // interactive=false — только с уже выданным токеном, без окна входа: так
+  // вызывают автоматически, а всплывающее окно без касания браузер заблокирует.
+  function syncAll(cbs) {
+    cbs = cbs || {};
+    var fail = cbs.onError || function () {};
+    function start(token) {
+      listProgressFilesStrict(token, function (files) {
+        if (files === null) { fail("Drive не ответил — синхронизация отложена"); return; }
+        var remote = {};
+        files.forEach(function (f) {
+          if (/^learntest_.+\.json$/.test(f.name)) remote[f.name.replace(/\.json$/, "")] = f;
+        });
+        var keys = Object.keys(remote);
+        localProgressKeys().forEach(function (k) { if (!remote[k]) keys.push(k); });
+        var stats = { pulled: 0, pushed: 0, same: 0, failed: 0 };
+        var left = keys.length;
+        if (!left) { cbs.onDone && cbs.onDone(stats); return; }
+        function step() { if (--left === 0) cbs.onDone && cbs.onDone(stats); }
+        function push(key, val) {
+          if (val == null) { step(); return; }
+          uploadFile(token, key + ".json", val, function (err) { if (err) stats.failed++; else stats.pushed++; step(); });
+        }
+        keys.forEach(function (key) {
+          var local = null;
+          try { local = JSON.parse(localStorage.getItem(key)); } catch (e) {}
+          if (!remote[key]) { push(key, local); return; }
+          fetch("https://www.googleapis.com/drive/v3/files/" + remote[key].id + "?alt=media", { headers: authHeader(token) })
+            .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+            .then(function (theirs) {
+              var winner = window.LTProgress ? LTProgress.pickNewer(local, theirs) : "same";
+              if (winner === "remote") {
+                try { localStorage.setItem(key, JSON.stringify(theirs)); stats.pulled++; } catch (e) { stats.failed++; }
+                step();
+              } else if (winner === "local") {
+                push(key, local);
+              } else {
+                stats.same++;
+                step();
+              }
+            })
+            .catch(function () { stats.failed++; step(); });
+        });
+      });
+    }
+    if (cbs.interactive) { getToken(start, fail); return; }
+    var token = cachedToken();
+    if (!token) { fail("no-token"); return; }
+    start(token);
+  }
+
+  // Отправить один тест — только с уже выданным токеном, молча. Для автоотправки
+  // со страницы теста; без токена ничего не делает и говорит об этом колбэком.
+  function uploadOne(key, cb) {
+    cb = cb || function () {};
+    var token = cachedToken();
+    if (!token) { cb("no-token"); return; }
+    var val = null;
+    try { val = JSON.parse(localStorage.getItem(key)); } catch (e) {}
+    if (val == null) { cb(null); return; }
+    uploadFile(token, key + ".json", val, function (err) { cb(err ? String(err.message || err) : null); });
+  }
+
   window.LTSync = {
     configured: configured,
     hasToken: function () { return !!cachedToken(); },
     uploadAll: uploadAll,
     downloadAll: downloadAll,
+    syncAll: syncAll,
+    uploadOne: uploadOne,
     signOut: signOut
   };
 })();

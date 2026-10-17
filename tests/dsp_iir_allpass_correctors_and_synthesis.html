@@ -146,13 +146,15 @@
   <div class="modal">
     <h3>Синхронизация всех тестов с Google Drive</h3>
     <p id="syncStatus" style="color:var(--muted); font-size:.9rem;">Один вход — синхронизируются сразу все тесты.</p>
-    <button class="btn" id="syncUploadBtn">⬆️ Отправить весь прогресс в Drive</button>
+    <button class="btn" id="syncMergeBtn">🔄 Синхронизировать (свежее побеждает)</button>
+    <button class="btn secondary" id="syncUploadBtn">⬆️ Отправить весь прогресс в Drive</button>
     <button class="btn secondary" id="syncDownloadBtn">⬇️ Загрузить весь прогресс из Drive</button>
     <button class="btn secondary" id="syncCloseBtn">Закрыть</button>
   </div>
 </div>
 
 <script src="../config.js"></script>
+<script src="../progress.js"></script>
 <script src="../sync.js"></script>
 <script>
 (function () {
@@ -175,8 +177,35 @@
     return { current: 0, answers: {} };
   }
   function saveState() {
+    const now = Date.now();
+    state.updatedAt = now;   // по нему синхронизация решает, какая копия свежее
+    if (!state.doneAt && LTProgress.isDone(state)) state.doneAt = now;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    // Для «Продолжить» на главной — только обычный проход: повторение пройденного
+    // теста не «продолжение». Не "learntest_": такие ключи sync.js шлёт в Drive.
+    if (!drill) {
+      try { localStorage.setItem("ltindex_last", JSON.stringify({ slug: TEST_ID, at: now })); } catch (e) {}
+    }
+    scheduleUpload();
   }
+
+  // Тихая отправка в Drive через несколько секунд после ответа — только пока
+  // Google-токен жив (его выдаёт любая синхронизация по кнопке, ~на час).
+  let uploadTimer = null;
+  function scheduleUpload() {
+    if (!window.LTSync || !LTSync.hasToken()) return;
+    clearTimeout(uploadTimer);
+    uploadTimer = setTimeout(flushUpload, 4000);
+  }
+  function flushUpload() {
+    if (uploadTimer === null) return;
+    clearTimeout(uploadTimer);
+    uploadTimer = null;
+    LTSync.uploadOne(STORAGE_KEY);
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushUpload();
+  });
 
   // Fisher-Yates shuffle (returns a new array, does not mutate input)
   function shuffle(arr) {
@@ -214,22 +243,9 @@
 
   function blockOf(idx) { return Math.floor(idx / 10); }
 
-  function render() {
-    if (state.current >= QUESTIONS.length) {
-      renderResult();
-      return;
-    }
-    resultArea.style.display = "none";
-    quizArea.style.display = "block";
-
-    const idx = state.current;
-    const q = SHUFFLED[idx];
-    const answered = state.answers[idx];
-
-    progressFill.style.width = Math.round((idx / QUESTIONS.length) * 100) + "%";
-    progressText.textContent = (idx + 1) + " / " + QUESTIONS.length;
-    blockLabel.textContent = "Блок " + (blockOf(idx) + 1) + ": " + BLOCK_NAMES[blockOf(idx)];
-
+  // Карточка вопроса: варианты, объяснение, пример. Общая для теста и для
+  // «Работы над ошибками» / «Повторения», чтобы они не разошлись видом.
+  function cardHtml(q, answered) {
     let html = '<div class="card">';
     html += '<div class="question">' + renderQuestion(q.q) + '</div>';
     html += '<div class="qsearch"><a class="iconbtn" target="_blank" rel="noopener" href="https://www.google.com/search?q=' + encodeURIComponent(questionSearchText(q.q)) + '">🔍 Найти в Google</a></div>';
@@ -256,6 +272,26 @@
       html += '</div>';
     }
     html += '</div>';
+    return html;
+  }
+
+  function render() {
+    if (state.current >= QUESTIONS.length) {
+      renderResult();
+      return;
+    }
+    resultArea.style.display = "none";
+    quizArea.style.display = "block";
+
+    const idx = state.current;
+    const q = SHUFFLED[idx];
+    const answered = state.answers[idx];
+
+    progressFill.style.width = Math.round((idx / QUESTIONS.length) * 100) + "%";
+    progressText.textContent = (idx + 1) + " / " + QUESTIONS.length;
+    blockLabel.textContent = "Блок " + (blockOf(idx) + 1) + ": " + BLOCK_NAMES[blockOf(idx)];
+
+    let html = cardHtml(q, answered);
     html += '<div class="nav">';
     html += '<button class="btn secondary" id="prevBtn"' + (idx === 0 ? ' disabled' : '') + '>Назад</button>';
     html += '<button class="btn" id="nextBtn"' + (answered ? '' : ' disabled') + '>' + (idx === QUESTIONS.length - 1 ? 'Завершить' : 'Далее') + '</button>';
@@ -311,13 +347,122 @@
       html += '<div class="row"><span>' + (i + 1) + '. ' + name + '</span><span>' + blockStats[i] + ' / ' + blockTotals[i] + '</span></div>';
     });
     html += '</div></div>';
-    html += '<div class="nav"><button class="btn" id="reviewBtn">Пересмотреть ответы</button></div>';
+    const open = LTProgress.mistakes(state).length;
+    const due = LTProgress.reviewDue(state);
+    if (due) {
+      html += '<div style="color:var(--muted); font-size:.88rem; margin-top:12px; text-align:center;">Следующее повторение: ' +
+        (due <= Date.now() ? 'уже пора' : new Date(due).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })) + '</div>';
+    }
+    if (open) html += '<div class="nav"><button class="btn" id="mistakesBtn">🔁 Работа над ошибками (' + open + ')</button></div>';
+    html += '<div class="nav"><button class="btn' + (open ? ' secondary' : '') + '" id="drillReviewBtn">🧠 Повторить ' + LTProgress.REVIEW_SIZE + ' вопросов</button></div>';
+    html += '<div class="nav"><button class="btn secondary" id="reviewBtn">Пересмотреть ответы</button></div>';
     resultArea.innerHTML = html;
 
+    if (open) document.getElementById("mistakesBtn").addEventListener("click", () => startDrill("mistakes"));
+    document.getElementById("drillReviewBtn").addEventListener("click", () => startDrill("review"));
     document.getElementById("reviewBtn").addEventListener("click", () => {
       state.current = 0;
       render();
     });
+  }
+
+  // ---- «Работа над ошибками» и «Повторение» ----
+  // Отдельный проход поверх пройденного теста. Счёт теста (state.answers) он не
+  // трогает: исправленная ошибка пишется в state.fixed, итог повторения — в
+  // state.review, и следующий срок повторения считает progress.js.
+  let drill = null;   // {kind, queue: [индексы], pos, answer: {sel, correct} | null, right}
+
+  function startDrill(kind) {
+    const queue = kind === "mistakes"
+      ? LTProgress.mistakes(state)
+      : shuffle(QUESTIONS.map((_, i) => i)).slice(0, LTProgress.REVIEW_SIZE);
+    if (!queue.length) {
+      drill = null;
+      history.replaceState(null, "", location.pathname);
+      render();
+      toast(kind === "mistakes" ? "Ошибок не осталось — всё исправлено" : "Нечего повторять");
+      return;
+    }
+    drill = { kind: kind, queue: queue, pos: 0, answer: null, right: 0 };
+    SHUFFLED = buildShuffledQuestions();
+    window.scrollTo(0, 0);
+    renderDrill();
+  }
+
+  function leaveDrill() {
+    drill = null;
+    history.replaceState(null, "", location.pathname);
+    render();
+  }
+
+  function renderDrill() {
+    if (drill.pos >= drill.queue.length) { renderDrillResult(); return; }
+    resultArea.style.display = "none";
+    quizArea.style.display = "block";
+    const idx = drill.queue[drill.pos];
+    const q = SHUFFLED[idx];
+    const answered = drill.answer ? { selectedText: q.options[drill.answer.sel], correct: drill.answer.correct } : null;
+    progressFill.style.width = Math.round((drill.pos / drill.queue.length) * 100) + "%";
+    progressText.textContent = (drill.pos + 1) + " / " + drill.queue.length;
+    blockLabel.textContent = (drill.kind === "mistakes" ? "Работа над ошибками" : "Повторение") + " · вопрос " + (idx + 1);
+
+    let html = cardHtml(q, answered);
+    html += '<div class="nav">';
+    html += '<button class="btn secondary" id="drillExitBtn">Выйти</button>';
+    html += '<button class="btn" id="drillNextBtn"' + (answered ? '' : ' disabled') + '>' + (drill.pos === drill.queue.length - 1 ? 'Итог' : 'Далее') + '</button>';
+    html += '</div>';
+    quizArea.innerHTML = html;
+
+    quizArea.querySelectorAll(".opt").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (drill.answer) return;
+        const sel = parseInt(btn.dataset.i, 10);
+        const ok = sel === q.correct;
+        drill.answer = { sel: sel, correct: ok };
+        if (ok) drill.right++;
+        state.fixed = state.fixed || {};
+        if (drill.kind === "mistakes" && ok) { state.fixed[idx] = Date.now(); saveState(); }
+        // Исправленная раньше ошибка, снова неверная на повторении, возвращается в работу.
+        if (drill.kind === "review" && !ok && state.fixed[idx]) { delete state.fixed[idx]; saveState(); }
+        renderDrill();
+      });
+    });
+    document.getElementById("drillExitBtn").addEventListener("click", leaveDrill);
+    document.getElementById("drillNextBtn").addEventListener("click", () => {
+      drill.pos++;
+      drill.answer = null;
+      window.scrollTo(0, 0);
+      renderDrill();
+    });
+  }
+
+  function renderDrillResult() {
+    quizArea.style.display = "none";
+    resultArea.style.display = "block";
+    progressFill.style.width = "100%";
+    const total = drill.queue.length;
+    let html = '<div class="card result">';
+    html += '<div class="score">' + drill.right + ' / ' + total + '</div>';
+    if (drill.kind === "mistakes") {
+      const left = LTProgress.mistakes(state).length;
+      blockLabel.textContent = "Работа над ошибками · итог";
+      html += '<div style="color:var(--muted); margin-top:6px;">исправлено за этот заход</div>';
+      html += '<div style="margin-top:14px;">' + (left ? ('Осталось ошибок: ' + left) : 'Все ошибки этого теста исправлены') + '</div></div>';
+      if (left) html += '<div class="nav"><button class="btn" id="drillAgainBtn">🔁 Ещё раз (' + left + ')</button></div>';
+    } else {
+      const now = Date.now();
+      state.review = LTProgress.nextReview(state, drill.right, total, now);
+      saveState();
+      blockLabel.textContent = "Повторение · итог";
+      html += '<div style="color:var(--muted); margin-top:6px;">правильных на повторении</div>';
+      html += '<div style="margin-top:14px;">Следующее повторение: ' +
+        new Date(state.review.dueAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }) + '</div></div>';
+    }
+    html += '<div class="nav"><button class="btn secondary" id="drillDoneBtn">К тесту</button></div>';
+    resultArea.innerHTML = html;
+    const again = document.getElementById("drillAgainBtn");
+    if (again) again.addEventListener("click", () => startDrill("mistakes"));
+    document.getElementById("drillDoneBtn").addEventListener("click", leaveDrill);
   }
 
   function escapeHtml(s) {
@@ -363,8 +508,6 @@
     }
   });
 
-  render();
-
   // ---- Синхронизация всех тестов (Google Drive), общий модуль sync.js ----
   const toastEl = document.getElementById("toast");
   function toast(msg) {
@@ -373,12 +516,19 @@
     setTimeout(() => toastEl.classList.remove("show"), 2500);
   }
 
+  const mode = new URLSearchParams(location.search).get("mode");
+  if (mode === "mistakes" || mode === "review") startDrill(mode);
+  else render();
+
   const syncModal = document.getElementById("syncModal");
   const syncStatus = document.getElementById("syncStatus");
   const uploadBtn = document.getElementById("syncUploadBtn");
   const downloadBtn = document.getElementById("syncDownloadBtn");
 
-  function setBusy(busy) { uploadBtn.disabled = busy; downloadBtn.disabled = busy; }
+  function setBusy(busy) {
+    uploadBtn.disabled = busy; downloadBtn.disabled = busy;
+    document.getElementById("syncMergeBtn").disabled = busy;
+  }
 
   document.getElementById("syncBtn").addEventListener("click", () => {
     if (!window.LTSync || !LTSync.configured()) {
@@ -391,6 +541,21 @@
     syncModal.classList.add("show");
   });
   document.getElementById("syncCloseBtn").addEventListener("click", () => syncModal.classList.remove("show"));
+
+  document.getElementById("syncMergeBtn").addEventListener("click", () => {
+    setBusy(true);
+    syncStatus.textContent = "Синхронизация…";
+    LTSync.syncAll({
+      interactive: true,
+      onDone: (s) => {
+        setBusy(false);
+        if (!drill) { state = loadState(); render(); }
+        toast("Получено " + s.pulled + ", отправлено " + s.pushed + (s.failed ? ", ошибок " + s.failed : ""));
+        syncModal.classList.remove("show");
+      },
+      onError: (msg) => { setBusy(false); toast(msg); syncStatus.textContent = msg; }
+    });
+  });
 
   uploadBtn.addEventListener("click", () => {
     setBusy(true);
