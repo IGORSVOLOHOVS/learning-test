@@ -219,11 +219,10 @@
   // Группы сверху вниз. open(b) — раскрыта ли по умолчанию; раскрыл или свернул
   // вручную — запоминается и дальше главнее умолчания.
   const GROUPS = [
-    { key: "review", title: "Пора повторить", open: () => true },
     { key: "progress", title: "В процессе", open: () => true },
     { key: "mistakes", title: "Работа над ошибками", open: () => false },
     // сама открыта, только когда больше нечем заняться, иначе это снова лента
-    { key: "todo", title: "Не начаты", open: (b) => !b.progress.length && !b.review.length },
+    { key: "todo", title: "Не начаты", open: (b) => !b.progress.length },
     { key: "done", title: "Выполнены", open: () => false },
     { key: "labs", title: "Лаборатории", open: () => false },
   ];
@@ -240,9 +239,6 @@
   function loadTest(slug) {
     try { return JSON.parse(localStorage.getItem("learntest_" + slug)); } catch (e) { return null; }
   }
-  function fmtDate(ms) {
-    return new Date(ms).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-  }
 
   function testCard(slug, title, state, kind) {
     const total = LTProgress.TOTAL;
@@ -251,11 +247,7 @@
     const pct = done ? 100 : Math.round((Math.min(current, total) / total) * 100);
     let href = "tests/" + slug + ".html";
     let label;
-    if (kind === "review") {
-      href += "?mode=review";
-      const due = LTProgress.reviewDue(state);
-      label = "Повторить " + LTProgress.REVIEW_SIZE + " вопросов · " + (due === 0 ? "дата прохождения неизвестна" : "срок был " + fmtDate(due));
-    } else if (kind === "mistakes") {
+    if (kind === "mistakes") {
       href += "?mode=mistakes";
       label = "Ошибок к исправлению: " + LTProgress.mistakes(state).length;
     } else if (done) {
@@ -268,8 +260,8 @@
     a.href = href;
     a.innerHTML =
       '<h2>' + title + '</h2>' +
-      '<div class="meta"><span>' + label + '</span><span>' + (kind === "mistakes" || kind === "review" ? "" : pct + '%') + '</span></div>' +
-      (kind === "mistakes" || kind === "review" ? "" :
+      '<div class="meta"><span>' + label + '</span><span>' + (kind === "mistakes" ? "" : pct + '%') + '</span></div>' +
+      (kind === "mistakes" ? "" :
         '<div class="progress-mini' + (done ? ' done' : '') + '"><div style="width:' + pct + '%"></div></div>');
     return a;
   }
@@ -342,14 +334,11 @@
 
   function renderList() {
     list.innerHTML = "";
-    const now = Date.now();
-    const buckets = { review: [], progress: [], mistakes: [], todo: [], done: [], labs: [] };
+    const buckets = { progress: [], mistakes: [], todo: [], done: [], labs: [] };
     TESTS.forEach(([slug, title]) => {
       const state = loadTest(slug);
       const st = LTProgress.status(state);
-      // Пройденный, которому пора на повторение, стоит только в «Пора повторить».
-      if (st === "done" && LTProgress.isReviewDue(state, now)) buckets.review.push({ title, el: testCard(slug, title, state, "review") });
-      else buckets[st].push({ title, el: testCard(slug, title, state, st) });
+      buckets[st].push({ title, el: testCard(slug, title, state, st) });
       if (LTProgress.mistakes(state).length) buckets.mistakes.push({ title, el: testCard(slug, title, state, "mistakes") });
     });
     SIMS.forEach(([slug, title]) => buckets.labs.push({ title, el: simCard(slug, title) }));

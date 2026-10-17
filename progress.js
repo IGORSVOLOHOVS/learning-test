@@ -7,18 +7,12 @@
 //   answers   — {i: {selectedText, correct}} — первый ответ на каждый вопрос
 //   updatedAt — когда состояние менялось последний раз (мс); по нему синхронизация
 //               решает, какая копия свежее. У старого прогресса поля нет.
-//   doneAt    — когда тест впервые пройден до конца (мс)
 //   fixed     — {i: мс} — ошибки, исправленные в «Работе над ошибками». Счёт теста
 //               (answers) при этом не меняется: исправление — отдельный факт.
-//   review    — {count, dueAt, last: {at, correct, total}} — интервальное повторение
+// В старом прогрессе могут лежать doneAt и review — от убранного «Пора повторить»
+// (17.10.2026); их никто не читает.
 (function (root) {
   var TOTAL = 50;
-  var DAY = 24 * 3600 * 1000;
-  // Через сколько дней повторять: после прохождения — 3, потом 7, потом 30 и дальше
-  // раз в 30. Повторение хуже PASS_SHARE возвращает к первому интервалу.
-  var INTERVALS_DAYS = [3, 7, 30];
-  var PASS_SHARE = 0.7;
-  var REVIEW_SIZE = 10;
 
   function answeredCount(state) {
     return state && state.answers ? Object.keys(state.answers).length : 0;
@@ -57,29 +51,6 @@
     return out.sort(function (a, b) { return a - b; });
   }
 
-  // Когда пора повторять пройденный тест: число (мс), 0 — «уже пора, дата
-  // прохождения неизвестна» (прогресс записан до появления doneAt), null — не пройден.
-  function reviewDue(state) {
-    if (!isDone(state)) return null;
-    if (state.review && typeof state.review.dueAt === "number") return state.review.dueAt;
-    if (typeof state.doneAt === "number") return state.doneAt + INTERVALS_DAYS[0] * DAY;
-    return 0;
-  }
-
-  function isReviewDue(state, now) {
-    var due = reviewDue(state);
-    return due !== null && due <= now;
-  }
-
-  // Записать итог повторения и назначить следующее. Возвращает новый review.
-  function nextReview(state, correct, total, now) {
-    var prev = (state && state.review) || {};
-    var passed = total > 0 && correct / total >= PASS_SHARE;
-    var count = passed ? (prev.count || 0) + 1 : 0;
-    var days = INTERVALS_DAYS[Math.min(count, INTERVALS_DAYS.length - 1)];
-    return { count: count, dueAt: now + days * DAY, last: { at: now, correct: correct, total: total } };
-  }
-
   // Какая копия свежее: "local", "remote" или "same". Сначала по updatedAt; у
   // старого прогресса его нет, тогда по объёму — больше отвеченных значит дальше;
   // при равенстве оставляем локальную: молча перезаписать то, что на экране,
@@ -102,10 +73,9 @@
   }
 
   var api = {
-    TOTAL: TOTAL, DAY: DAY, INTERVALS_DAYS: INTERVALS_DAYS, PASS_SHARE: PASS_SHARE, REVIEW_SIZE: REVIEW_SIZE,
+    TOTAL: TOTAL,
     answeredCount: answeredCount, isDone: isDone, status: status, correctCount: correctCount,
-    mistakes: mistakes, reviewDue: reviewDue, isReviewDue: isReviewDue, nextReview: nextReview,
-    pickNewer: pickNewer, courseOf: courseOf
+    mistakes: mistakes, pickNewer: pickNewer, courseOf: courseOf
   };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.LTProgress = api;

@@ -179,10 +179,9 @@
   function saveState() {
     const now = Date.now();
     state.updatedAt = now;   // по нему синхронизация решает, какая копия свежее
-    if (!state.doneAt && LTProgress.isDone(state)) state.doneAt = now;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    // Для «Продолжить» на главной — только обычный проход: повторение пройденного
-    // теста не «продолжение». Не "learntest_": такие ключи sync.js шлёт в Drive.
+    // Для «Продолжить» на главной — только обычный проход: работа над ошибками
+    // не «продолжение». Не "learntest_": такие ключи sync.js шлёт в Drive.
     if (!drill) {
       try { localStorage.setItem("ltindex_last", JSON.stringify({ slug: TEST_ID, at: now })); } catch (e) {}
     }
@@ -348,39 +347,29 @@
     });
     html += '</div></div>';
     const open = LTProgress.mistakes(state).length;
-    const due = LTProgress.reviewDue(state);
-    if (due) {
-      html += '<div style="color:var(--muted); font-size:.88rem; margin-top:12px; text-align:center;">Следующее повторение: ' +
-        (due <= Date.now() ? 'уже пора' : new Date(due).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })) + '</div>';
-    }
     if (open) html += '<div class="nav"><button class="btn" id="mistakesBtn">🔁 Работа над ошибками (' + open + ')</button></div>';
-    html += '<div class="nav"><button class="btn' + (open ? ' secondary' : '') + '" id="drillReviewBtn">🧠 Повторить ' + LTProgress.REVIEW_SIZE + ' вопросов</button></div>';
-    html += '<div class="nav"><button class="btn secondary" id="reviewBtn">Пересмотреть ответы</button></div>';
+    html += '<div class="nav"><button class="btn' + (open ? ' secondary' : '') + '" id="reviewBtn">Пересмотреть ответы</button></div>';
     resultArea.innerHTML = html;
 
     if (open) document.getElementById("mistakesBtn").addEventListener("click", () => startDrill("mistakes"));
-    document.getElementById("drillReviewBtn").addEventListener("click", () => startDrill("review"));
     document.getElementById("reviewBtn").addEventListener("click", () => {
       state.current = 0;
       render();
     });
   }
 
-  // ---- «Работа над ошибками» и «Повторение» ----
-  // Отдельный проход поверх пройденного теста. Счёт теста (state.answers) он не
-  // трогает: исправленная ошибка пишется в state.fixed, итог повторения — в
-  // state.review, и следующий срок повторения считает progress.js.
+  // ---- «Работа над ошибками» ----
+  // Отдельный проход только по вопросам с неисправленной ошибкой. Счёт теста
+  // (state.answers) он не трогает: исправленная ошибка пишется в state.fixed.
   let drill = null;   // {kind, queue: [индексы], pos, answer: {sel, correct} | null, right}
 
   function startDrill(kind) {
-    const queue = kind === "mistakes"
-      ? LTProgress.mistakes(state)
-      : shuffle(QUESTIONS.map((_, i) => i)).slice(0, LTProgress.REVIEW_SIZE);
+    const queue = LTProgress.mistakes(state);
     if (!queue.length) {
       drill = null;
       history.replaceState(null, "", location.pathname);
       render();
-      toast(kind === "mistakes" ? "Ошибок не осталось — всё исправлено" : "Нечего повторять");
+      toast("Ошибок не осталось — всё исправлено");
       return;
     }
     drill = { kind: kind, queue: queue, pos: 0, answer: null, right: 0 };
@@ -404,7 +393,7 @@
     const answered = drill.answer ? { selectedText: q.options[drill.answer.sel], correct: drill.answer.correct } : null;
     progressFill.style.width = Math.round((drill.pos / drill.queue.length) * 100) + "%";
     progressText.textContent = (drill.pos + 1) + " / " + drill.queue.length;
-    blockLabel.textContent = (drill.kind === "mistakes" ? "Работа над ошибками" : "Повторение") + " · вопрос " + (idx + 1);
+    blockLabel.textContent = "Работа над ошибками · вопрос " + (idx + 1);
 
     let html = cardHtml(q, answered);
     html += '<div class="nav">';
@@ -420,10 +409,7 @@
         const ok = sel === q.correct;
         drill.answer = { sel: sel, correct: ok };
         if (ok) drill.right++;
-        state.fixed = state.fixed || {};
-        if (drill.kind === "mistakes" && ok) { state.fixed[idx] = Date.now(); saveState(); }
-        // Исправленная раньше ошибка, снова неверная на повторении, возвращается в работу.
-        if (drill.kind === "review" && !ok && state.fixed[idx]) { delete state.fixed[idx]; saveState(); }
+        if (ok) { state.fixed = state.fixed || {}; state.fixed[idx] = Date.now(); saveState(); }
         renderDrill();
       });
     });
@@ -443,21 +429,11 @@
     const total = drill.queue.length;
     let html = '<div class="card result">';
     html += '<div class="score">' + drill.right + ' / ' + total + '</div>';
-    if (drill.kind === "mistakes") {
-      const left = LTProgress.mistakes(state).length;
-      blockLabel.textContent = "Работа над ошибками · итог";
-      html += '<div style="color:var(--muted); margin-top:6px;">исправлено за этот заход</div>';
-      html += '<div style="margin-top:14px;">' + (left ? ('Осталось ошибок: ' + left) : 'Все ошибки этого теста исправлены') + '</div></div>';
-      if (left) html += '<div class="nav"><button class="btn" id="drillAgainBtn">🔁 Ещё раз (' + left + ')</button></div>';
-    } else {
-      const now = Date.now();
-      state.review = LTProgress.nextReview(state, drill.right, total, now);
-      saveState();
-      blockLabel.textContent = "Повторение · итог";
-      html += '<div style="color:var(--muted); margin-top:6px;">правильных на повторении</div>';
-      html += '<div style="margin-top:14px;">Следующее повторение: ' +
-        new Date(state.review.dueAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }) + '</div></div>';
-    }
+    const left = LTProgress.mistakes(state).length;
+    blockLabel.textContent = "Работа над ошибками · итог";
+    html += '<div style="color:var(--muted); margin-top:6px;">исправлено за этот заход</div>';
+    html += '<div style="margin-top:14px;">' + (left ? ('Осталось ошибок: ' + left) : 'Все ошибки этого теста исправлены') + '</div></div>';
+    if (left) html += '<div class="nav"><button class="btn" id="drillAgainBtn">🔁 Ещё раз (' + left + ')</button></div>';
     html += '<div class="nav"><button class="btn secondary" id="drillDoneBtn">К тесту</button></div>';
     resultArea.innerHTML = html;
     const again = document.getElementById("drillAgainBtn");
@@ -517,7 +493,7 @@
   }
 
   const mode = new URLSearchParams(location.search).get("mode");
-  if (mode === "mistakes" || mode === "review") startDrill(mode);
+  if (mode === "mistakes") startDrill(mode);
   else render();
 
   const syncModal = document.getElementById("syncModal");

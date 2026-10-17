@@ -10,7 +10,6 @@ const assert = require("assert");
 
 const ROOT = path.resolve(__dirname, "..");
 const P = require(path.join(ROOT, "progress.js"));
-const DAY = P.DAY;
 let failures = 0;
 function check(name, fn) {
   try { fn(); console.log("ok   " + name); }
@@ -37,28 +36,14 @@ check("mistakes: first-attempt errors minus the fixed ones", () => {
   assert.strictEqual(P.correctCount(s), 47);   // fixing does not rewrite the score
 });
 
-check("review due: 3 days after finishing; unknown date means due now", () => {
-  assert.strictEqual(P.reviewDue({ current: 50, answers: answers(50), doneAt: 1000 }), 1000 + 3 * DAY);
-  assert.strictEqual(P.reviewDue({ current: 50, answers: answers(50) }), 0);
-  assert.strictEqual(P.reviewDue({ current: 5, answers: answers(5) }), null);
-  assert.strictEqual(P.isReviewDue({ current: 50, answers: answers(50) }, 1), true);
-  assert.strictEqual(P.isReviewDue({ current: 50, answers: answers(50), doneAt: 0, review: { dueAt: 10 * DAY } }, DAY), false);
-});
-
-check("review schedule: 3 → 7 → 30 → 30; a weak review starts over", () => {
-  const now = 100 * DAY;
-  let s = { current: 50, answers: answers(50) };
-  s.review = P.nextReview(s, 8, 10, now);
-  assert.strictEqual(s.review.count, 1);
-  assert.strictEqual(s.review.dueAt, now + 7 * DAY);
-  s.review = P.nextReview(s, 9, 10, now);
-  assert.strictEqual(s.review.dueAt, now + 30 * DAY);
-  s.review = P.nextReview(s, 10, 10, now);
-  assert.strictEqual(s.review.dueAt, now + 30 * DAY);
-  s.review = P.nextReview(s, 6, 10, now);     // 60% < 70%
-  assert.strictEqual(s.review.count, 0);
-  assert.strictEqual(s.review.dueAt, now + 3 * DAY);
-  assert.deepStrictEqual(s.review.last, { at: now, correct: 6, total: 10 });
+check("the removed «Пора повторить» left nothing behind in the shared logic", () => {
+  for (const name of ["reviewDue", "isReviewDue", "nextReview", "REVIEW_SIZE", "INTERVALS_DAYS"]) {
+    assert.strictEqual(P[name], undefined, name);
+  }
+  // old progress may still carry its fields; they change nothing
+  const s = { current: 50, answers: answers(50, [3]), doneAt: 1, review: { count: 2, dueAt: 5 } };
+  assert.strictEqual(P.status(s), "done");
+  assert.deepStrictEqual(P.mistakes(s), [3]);
 });
 
 check("pickNewer: updatedAt wins; old progress without it — more answers wins", () => {
