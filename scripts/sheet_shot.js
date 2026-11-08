@@ -1,5 +1,5 @@
 // Снимок страницы через headless Chrome (CDP), для контактных листов картинок.
-// node scripts/sheet_shot.js <file-or-url> <out.png> [width]
+// node scripts/sheet_shot.js <file-or-url> <out.png> [width] [js-выражение перед снимком]
 // Порт и профиль свои на каждый запуск: несколько агентов могут снимать одновременно.
 const { spawn, execSync } = require("child_process");
 const fs = require("fs");
@@ -7,7 +7,7 @@ const os = require("os");
 const path = require("path");
 
 const CHROME = process.env.CHROME_PATH || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const [target, out, widthArg] = process.argv.slice(2);
+const [target, out, widthArg, setup] = process.argv.slice(2);
 const width = +(widthArg || 1000);
 const url = /^[a-z]+:\/\//i.test(target) ? target : "file:///" + path.resolve(target).replace(/\\/g, "/");
 const port = 9400 + Math.floor(Math.random() * 500);
@@ -43,6 +43,10 @@ setTimeout(() => { console.error("timeout"); done(2); }, 60000);
   await send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
   await send("Page.reload");
   await sleep(2500);
+  if (setup) {
+    await send("Runtime.evaluate", { expression: setup, awaitPromise: true });
+    await sleep(800);
+  }
   const lm = await send("Page.getLayoutMetrics");
   const h = Math.ceil((lm.cssContentSize || lm.contentSize).height);
   const shot = await send("Page.captureScreenshot", {

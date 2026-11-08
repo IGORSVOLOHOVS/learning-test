@@ -4,7 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Основы электроники</title>
+<link rel="stylesheet" href="../vendor/katex/katex.min.css">
 <style>
+  .katex { font-size: 1.08em; }
+  .katex-display { margin: .5em 0; overflow-x: auto; overflow-y: hidden; }
   :root {
     --bg: #0f1117;
     --card: #1a1d29;
@@ -160,6 +163,8 @@
 <script src="../config.js"></script>
 <script src="../progress.js"></script>
 <script src="../sync.js"></script>
+<script src="../vendor/katex/katex.min.js"></script>
+<script src="../vendor/katex/auto-render.min.js"></script>
 <script>
 (function () {
   const TEST_ID = "electronics";
@@ -302,6 +307,7 @@
     html += '</div>';
 
     quizArea.innerHTML = html;
+    typeset(quizArea);
 
     quizArea.querySelectorAll(".opt").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -355,6 +361,7 @@
     if (open) html += '<div class="nav"><button class="btn" id="mistakesBtn">🔁 Работа над ошибками (' + open + ')</button></div>';
     html += '<div class="nav"><button class="btn' + (open ? ' secondary' : '') + '" id="reviewBtn">Пересмотреть ответы</button></div>';
     resultArea.innerHTML = html;
+    typeset(resultArea);
 
     if (open) document.getElementById("mistakesBtn").addEventListener("click", () => startDrill("mistakes"));
     document.getElementById("reviewBtn").addEventListener("click", () => {
@@ -406,6 +413,7 @@
     html += '<button class="btn" id="drillNextBtn"' + (answered ? '' : ' disabled') + '>' + (drill.pos === drill.queue.length - 1 ? 'Итог' : 'Далее') + '</button>';
     html += '</div>';
     quizArea.innerHTML = html;
+    typeset(quizArea);
 
     quizArea.querySelectorAll(".opt").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -441,6 +449,7 @@
     if (left) html += '<div class="nav"><button class="btn" id="drillAgainBtn">🔁 Ещё раз (' + left + ')</button></div>';
     html += '<div class="nav"><button class="btn secondary" id="drillDoneBtn">К тесту</button></div>';
     resultArea.innerHTML = html;
+    typeset(resultArea);
     const again = document.getElementById("drillAgainBtn");
     if (again) again.addEventListener("click", () => startDrill("mistakes"));
     document.getElementById("drillDoneBtn").addEventListener("click", leaveDrill);
@@ -483,7 +492,23 @@
   // Поиск в Google — по тексту вопроса без фрагментов кода.
   function questionSearchText(text) {
     const parts = String(text == null ? "" : text).split("```");
-    return parts.filter(function (_, i) { return i % 2 === 0; }).join(" ").replace(/\s+/g, " ").trim();
+    return parts.filter(function (_, i) { return i % 2 === 0; }).join(" ")
+      .replace(/\\[()\[\]]/g, " ").replace(/\\([a-zA-Z]+)/g, "$1").replace(/\s+/g, " ").trim();
+  }
+
+  // Формулы в тексте: \( ... \) в строке, \[ ... \] отдельной строкой (KaTeX,
+  // файлы в vendor/katex). Знак $ разделителем не служит: в тестах по
+  // ассемблеру и shell он означает константу и переменную. Код в <pre> и
+  // <code> не трогается. Без KaTeX текст остаётся как есть.
+  function typeset(el) {
+    if (!el || typeof renderMathInElement !== "function") return;
+    renderMathInElement(el, {
+      delimiters: [
+        { left: "\\(", right: "\\)", display: false },
+        { left: "\\[", right: "\\]", display: true }
+      ],
+      throwOnError: false
+    });
   }
 
   // Вариант ответа целиком в обратных кавычках — это код, моноширинно.

@@ -20,6 +20,7 @@
 """
 
 import json
+import re
 import os
 import sys
 import glob
@@ -36,8 +37,45 @@ MAX_LONGEST_FRAC = 0.35  # «правильный строго самый дли
 LEN_MEAN_TOL = 0.15      # средняя длина правильного в пределах ±15% от неправильных
 
 
+MATH_DELIM = re.compile(r"\\[()\[\]]")
+
+
+def shown(s):
+    """Приблизительно то, что видно после KaTeX: без разделителей \\( \\) \\[ \\],
+    команда вроде \\omega или \\frac — один знак, без {}, ^ и _. Длину и скобки
+    правил 3–4 человек оценивает по видимому тексту, а не по исходнику LaTeX."""
+    s = MATH_DELIM.sub("", s)
+    s = re.sub(r"\\(left|right|big|Big|,|;|!|quad)", "", s)
+    s = re.sub(r"\\[a-zA-Z]+", "x", s)
+    return re.sub(r"[{}^_]", "", s)
+
+
+def has_math(s):
+    return bool(MATH_DELIM.search(s))
+
+
 def has_paren(s):
+    s = shown(s)
     return ("(" in s) or (")" in s)
+
+
+def math_balance_errors(text):
+    """Каждый \\( закрыт \\) и каждый \\[ закрыт \\], без вложенности."""
+    depth, errs = None, []
+    for m in MATH_DELIM.finditer(text):
+        tok = m.group(0)
+        if tok in ("\\(", "\\["):
+            if depth:
+                errs.append(f"{tok} внутри {depth}")
+            depth = tok
+        else:
+            want = "\\(" if tok == "\\)" else "\\["
+            if depth != want:
+                errs.append(f"{tok} без {want}")
+            depth = None
+    if depth:
+        errs.append(f"{depth} не закрыт")
+    return errs
 
 
 def check_file(path):
@@ -67,8 +105,17 @@ def check_file(path):
             problems.append(f"{slug} #{i}: correct вне диапазона: {c}")
             continue
 
+        u = q.get("usage") or {}
+        fields = [q.get("q", ""), q.get("explain", "")] + list(opts) + [
+            u.get(k) or "" for k in ("without", "with", "benefit")]
+        for f in fields:
+            for e in math_balance_errors(f):
+                problems.append(f"{slug} #{i}: формула: {e}")
+        if has_math(opts[c]) and not any(has_math(o) for j, o in enumerate(opts) if j != c):
+            problems.append(f"{slug} #{i}: формула LaTeX только у правильного варианта — выдаёт ответ")
+
         pos[c] += 1
-        lens = [len(o) for o in opts]
+        lens = [len(shown(o)) for o in opts]
         c_len += lens[c]
         for j in range(N_OPTIONS):
             if j != c:
