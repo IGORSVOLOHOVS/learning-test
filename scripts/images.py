@@ -8,6 +8,7 @@ credit обязателен для картинок из интернета и �
     python scripts/images.py check  [slug ...]   # файлы, размеры, утечки ответа
     python scripts/images.py attach [slug ...]   # вписать поле img в content/<slug>.json
     python scripts/images.py sheet  <slug>       # PNG-листы по 10 картинок для осмотра
+    python scripts/images.py frames <slug>       # кадры анимаций на 0, 1/4, 1/2, 3/4 цикла
 
 Без slug — все тесты, у которых есть папка img/<slug>/.
 Код возврата != 0 при ошибке check.
@@ -93,8 +94,24 @@ def check_svg(path, tag, q):
         return errs + [f"{tag}: SVG не разбирается: {e}"]
     if root.tag != SVG_NS + "svg":
         errs.append(f"{tag}: корень не <svg> с xmlns")
-    if not root.get("viewBox"):
+    vb = (root.get("viewBox") or "").split()
+    if len(vb) != 4:
         errs.append(f"{tag}: нет viewBox")
+    elif float(vb[2]) != 480 or not 240 <= float(vb[3]) <= 360:
+        errs.append(f"{tag}: viewBox {' '.join(vb)}, нужно 480 × 240..360")
+    kids = list(root)
+    first = kids[0] if kids else None
+    if first is None or first.tag != SVG_NS + "rect" or (first.get("fill") or "").lower() not in ("#ffffff", "#fff", "white"):
+        errs.append(f"{tag}: первый элемент не белая подложка <rect fill=\"#ffffff\">")
+    sizes = [el.get("font-size") for el in root.iter() if el.get("font-size")]
+    sizes += re.findall(r"font-size\s*:\s*([\d.]+)", raw)
+    small = sorted({x for x in sizes if re.fullmatch(r"[\d.]+(px)?", x) and float(x.rstrip("px")) < 16})
+    if small:
+        errs.append(f"{tag}: шрифт меньше 16 ({', '.join(small)}) — на телефоне не прочесть")
+    thin = sorted({el.get("stroke-width") for el in root.iter()
+                   if re.fullmatch(r"[\d.]+", el.get("stroke-width") or "x") and float(el.get("stroke-width")) < 1.5})
+    if thin:
+        errs.append(f"{tag}: линии тоньше 1.5 ({', '.join(thin)})")
     low = raw.lower()
     for bad in ("<script", "foreignobject", "onload=", "onclick="):
         if bad in low:
@@ -194,14 +211,52 @@ def sheet(slug, per_page=10):
     print("Ширина картинки на листе 360 px — примерно как на телефоне.")
 
 
+def frames(slug):
+    """Анимированные SVG, остановленные на 0, 1/4, 1/2, 3/4 цикла, — один PNG-лист."""
+    d = os.path.join(IMG_DIR, slug)
+    rows = []
+    for name in sorted(os.listdir(d)):
+        if not name.endswith(".svg"):
+            continue
+        svg = open(os.path.join(d, name), encoding="utf-8").read()
+        if not re.search(r"<animate|@keyframes", svg):
+            continue
+        durs = [float(x) * (0.001 if u == "ms" else 1) for x, u in re.findall(r'dur="([\d.]+)(m?s)"', svg)]
+        durs += [float(x) for x in re.findall(r"animation[^;\"]*?([\d.]+)s", svg)]
+        loop = max(durs) if durs else 4.0
+        cells = [f'<div class="lab">{name[:2]}<br>{loop:g} с</div>']
+        for k in range(4):
+            t = loop * k / 4
+            cells.append(f'<div class="c" data-t="{t:.3f}">{svg}<div class="t">t = {t:.2f} с</div></div>')
+        rows.append('<div class="r">' + "".join(cells) + "</div>")
+    if not rows:
+        print("анимированных нет")
+        return
+    page = ('<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:8px;background:#1b1e27;color:#ddd;'
+            'font:13px system-ui}.r{display:flex;gap:6px;align-items:flex-start;margin-bottom:8px}.lab{width:44px}'
+            '.c{width:220px}.c svg{width:220px;display:block}.t{font-size:11px}</style>' + "".join(rows) +
+            '<script>document.querySelectorAll(".c").forEach(c=>{const s=c.querySelector("svg");'
+            's.pauseAnimations();s.setCurrentTime(+c.dataset.t);'
+            's.getAnimations&&s.getAnimations({subtree:true}).forEach(a=>{a.pause();a.currentTime=1000*c.dataset.t;});});</script>')
+    out_dir = os.path.join(tempfile.gettempdir(), "lt-sheets", slug)
+    os.makedirs(out_dir, exist_ok=True)
+    hp = os.path.join(out_dir, "frames.html")
+    with open(hp, "w", encoding="utf-8") as f:
+        f.write(page)
+    png = hp[:-5] + ".png"
+    subprocess.run(["node", os.path.join(HERE, "sheet_shot.js"), hp, png, "960"], check=True)
+    print(png)
+    print("Кадры анимаций на 0, 1/4, 1/2, 3/4 цикла: движение должно быть видно и не выдавать ответ.")
+
+
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("check", "attach", "sheet"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("check", "attach", "sheet", "frames"):
         sys.exit(__doc__)
     cmd, args = sys.argv[1], sys.argv[2:]
-    if cmd == "sheet":
+    if cmd in ("sheet", "frames"):
         if len(args) != 1:
-            sys.exit("sheet <slug>")
-        return sheet(args[0])
+            sys.exit(cmd + " <slug>")
+        return sheet(args[0]) if cmd == "sheet" else frames(args[0])
     slugs = args or slugs_with_images()
     if cmd == "check":
         sys.exit(check(slugs))
