@@ -26,6 +26,7 @@ import glob
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONTENT_DIR = os.path.join(HERE, "content")
+ROOT = os.path.dirname(HERE)
 
 # Пороги (на выборке 50 вопросов; случайное ожидание позиции — 12.5)
 N_QUESTIONS = 50
@@ -95,7 +96,20 @@ def check_file(path):
     if only_paren:
         problems.append(f"{slug}: скобка только у правильного в {only_paren} вопросах — добавьте скобку в дистрактор или уберите у правильного")
 
-    stats = f"pos={pos} longest={longest}/{n} only_paren={only_paren}"
+    # Картинка вопроса (поле img, пишет scripts/images.py attach): файл на месте и есть alt.
+    # Содержимое самих картинок проверяет python scripts/images.py check.
+    imgs = 0
+    for i, q in enumerate(qs):
+        img = q.get("img")
+        if not img:
+            continue
+        imgs += 1
+        if not os.path.exists(os.path.join(ROOT, img.get("src", ""))):
+            problems.append(f"{slug} q{i + 1}: картинки {img.get('src')} нет на диске")
+        if not (img.get("alt") or "").strip():
+            problems.append(f"{slug} q{i + 1}: у картинки нет alt")
+
+    stats = f"pos={pos} longest={longest}/{n} only_paren={only_paren}" + (f" img={imgs}" if imgs else "")
     return slug, problems, stats
 
 
