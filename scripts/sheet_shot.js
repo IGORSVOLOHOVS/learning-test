@@ -17,15 +17,35 @@ const chrome = spawn(CHROME, ["--headless=new", "--disable-gpu", "--no-first-run
   "--allow-file-access-from-files", "--remote-debugging-port=" + port, "--user-data-dir=" + profile,
   "about:blank"], { stdio: "ignore" });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-function done(code) {
+let browserWs = null;
+// Chrome на Windows отцепляет дочерние процессы от того, что запустил spawn:
+// taskkill /T по chrome.pid их не находит, и за ночь прогонов осталось 278
+// живых headless-процессов. Поэтому: Browser.close по CDP, затем добивание
+// всех процессов с нашим профилем в командной строке, затем удаление профиля.
+async function done(code) {
+  if (browserWs) {
+    try {
+      const b = new WebSocket(browserWs);
+      await new Promise((r, j) => { b.addEventListener("open", r); b.addEventListener("error", j); });
+      b.send(JSON.stringify({ id: 1, method: "Browser.close" }));
+      await sleep(700);
+    } catch (e) {}
+  }
   try { execSync("taskkill /PID " + chrome.pid + " /T /F", { stdio: "ignore" }); } catch (e) {}
+  try {
+    execSync(`powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"name='chrome.exe'\\" | ` +
+      `Where-Object { $_.CommandLine -like '*${path.basename(profile)}*' } | ` +
+      `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
+      { stdio: "ignore", timeout: 30000 });
+  } catch (e) {}
+  try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) {}
   process.exit(code);
 }
 setTimeout(() => { console.error("timeout"); done(2); }, 60000);
 
 (async () => {
   for (let i = 0; i < 80; i++) {
-    try { await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; }
+    try { browserWs = (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()).webSocketDebuggerUrl; break; }
     catch (e) { await sleep(250); }
   }
   const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT" })).json();
