@@ -101,6 +101,19 @@ Pages) — чтобы изменения появились на сайте, о�
    Правило применяется к тестам, которые пользователь ещё НЕ прошёл (прогресс
    виден в Google Drive: `learntest_<slug>.json`, `current==50` = пройден).
 
+## Новый тест одной командой
+
+`python scripts/new_test.py --title "TSI DSP 5: Тема" --topic "что покрыть" [--source ПУТЬ ...]`
+регистрирует тест в `build.py` и сразу возвращается; тест пишет отдельный
+процесс (автор `claude -p` по `scripts/authoring/AUTHOR_PROMPT.md`, 15–60 мин),
+затем сам повторяет проверки (check_quality, check_math, build, test_shuffle;
+одна попытка починки), добавляет строку на главную, коммитит, пушит, шлёт
+ссылку в Telegram и, без `--no-images`, рисует картинки раннером
+`_tools/lt-images`. Журнал — `%LOCALAPPDATA%\learning-test\jobs\<slug>.log`.
+Источники (`--source`, можно папку с Google Диска `G:\My Drive\...`) автор
+обязан прочитать и следовать их обозначениям. Так тест заказывается из чата
+канвы dg и из Dispatch (скилл `learning-test-new`).
+
 ## Картинки к вопросам
 
 У вопроса может быть картинка: поле `img` = `{src, alt, credit?}` в
