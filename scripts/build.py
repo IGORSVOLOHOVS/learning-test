@@ -68,6 +68,7 @@ TOPICS = {
     "rcf_sensors_signal_conditioning_control_paradigms": {"title": "RCF 7: Датчики роботов, фильтрация, парадигмы и интеллектуальное управление", "sim": ""},
     "robotics_modelling_kinematics_dynamics_trajectories": {"title": "RMO: Моделирование роботов: DH, якобиан, динамика, траектории, валидация", "sim": ""},
     "trends_challenges_critical_reading_and_research_gaps": {"title": "TRC: Тренды и вызовы: критическое чтение, состояние области, research gap", "sim": ""},
+    "openbmc_bmc": {"title": "BMC и OpenBMC: железо, Redfish, D-Bus, Yocto", "sim": ""},
 }
 
 

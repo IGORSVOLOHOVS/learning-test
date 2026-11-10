@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>BMC и OpenBMC: железо, Redfish, D-Bus, Yocto</title>
+<link rel="stylesheet" href="../vendor/katex/katex.min.css">
+<style>
+  .katex { font-size: 1.08em; }
+  .katex-display { margin: .5em 0; overflow-x: auto; overflow-y: hidden; }
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d29;
+    --text: #eef0f6;
+    --muted: #8b8fa3;
+    --accent: #5b8cff;
+    --good: #2fbf71;
+    --bad: #ef5350;
+    --border: #2a2e3d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 17px;
+    line-height: 1.45;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 100px; }
+  header { padding: 14px 0 10px; }
+  h1 { font-size: 1.2rem; margin: 0 0 10px; }
+  .progressbar { height: 8px; background: var(--border); border-radius: 5px; overflow: hidden; }
+  .progressbar > div { height: 100%; background: var(--accent); transition: width .25s; }
+  .meta { display: flex; justify-content: space-between; font-size: .85rem; color: var(--muted); margin-top: 6px; }
+  .block-label { display: inline-block; background: var(--card); border: 1px solid var(--border); color: var(--accent); font-size: .75rem; padding: 3px 10px; border-radius: 20px; margin-bottom: 10px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-top: 10px; }
+  .question { font-size: 1.08rem; margin: 0 0 10px; white-space: pre-wrap; }
+  .question pre.qcode { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #0f1117; border: 1px solid var(--border); overflow-x: auto; white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82rem; line-height: 1.5; color: #d7dbe8; }
+  .opt code.optcode { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88rem; white-space: pre-wrap; }
+  .qsearch { margin: 0 0 14px; }
+  .qimg { margin: 0 0 12px; }
+  .qimg a { display: block; max-width: 560px; }
+  .qimg img { display: block; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border); }
+  .qimg figcaption { margin-top: 4px; font-size: .72rem; color: var(--muted); }
+  .options { display: flex; flex-direction: column; gap: 10px; }
+  .opt {
+    display: block; width: 100%; text-align: left;
+    background: #232838; color: var(--text);
+    border: 2px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; font-size: 1rem; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .opt:active { transform: scale(0.995); }
+  .opt.correct { border-color: var(--good); background: rgba(47,191,113,0.15); }
+  .opt.wrong { border-color: var(--bad); background: rgba(239,83,80,0.15); }
+  .opt.disabled { pointer-events: none; opacity: .85; }
+  .opt.dim { opacity: .5; }
+  .explain {
+    margin-top: 14px; padding: 12px 14px; border-radius: 10px;
+    background: #171a24; border-left: 3px solid var(--accent);
+    font-size: .92rem; color: #c7cadb; display: none;
+  }
+  .explain.show { display: block; }
+  .usage { margin-top: 12px; display: none; flex-direction: column; gap: 10px; }
+  .usage.show { display: flex; }
+  .usage .u-part { padding: 10px 12px; border-radius: 10px; background: #171a24; border-left: 3px solid var(--border); }
+  .usage .u-without { border-left-color: var(--bad); }
+  .usage .u-with { border-left-color: var(--good); }
+  .usage .u-label { font-weight: 700; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; color: var(--muted); }
+  .usage .u-without .u-label { color: var(--bad); }
+  .usage .u-with .u-label { color: var(--good); }
+  .usage .u-text { font-size: .9rem; color: #c7cadb; white-space: pre-wrap; }
+  .usage pre { margin: 0; padding: 8px 10px; border-radius: 8px; background: #0f1117; overflow-x: auto; white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .84rem; line-height: 1.45; color: #d7dbe8; }
+  .usage .u-benefit { padding: 9px 12px; border-radius: 10px; background: rgba(47,191,113,0.14); font-size: .9rem; color: var(--text); }
+  .nav { display: flex; gap: 10px; margin-top: 18px; }
+  button.btn {
+    flex: 1; padding: 14px; font-size: 1rem; border-radius: 12px; border: none;
+    background: var(--accent); color: white; cursor: pointer; font-weight: 600;
+  }
+  button.btn.secondary { background: #232838; color: var(--text); border: 1px solid var(--border); }
+  button.btn:disabled { opacity: .4; pointer-events: none; }
+  .topbar { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  .iconbtn {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 10px; padding: 8px 12px; font-size: .85rem; cursor: pointer;
+    text-decoration: none; display: inline-flex; align-items: center;
+  }
+  .result { text-align: center; padding: 20px 0; }
+  .result .score { font-size: 3rem; font-weight: 700; color: var(--accent); }
+  .blockscores { margin-top: 20px; text-align: left; }
+  .blockscores .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .92rem; }
+  a.back { color: var(--muted); text-decoration: none; font-size: .85rem; }
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 18px; border-radius: 10px; font-size: .9rem; opacity: 0;
+    transition: opacity .3s; pointer-events: none; z-index: 100; max-width: 90%; text-align: center;
+  }
+  .toast.show { opacity: 1; }
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    align-items: center; justify-content: center; z-index: 200; padding: 20px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; max-width: 380px; width: 100%; }
+  .modal h3 { margin-top: 0; }
+  .modal .btn { margin-top: 10px; }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f5f9; --card: #ffffff; --text: #1b1d27; --muted: #6b6f80;
+      --border: #e3e5ee;
+    }
+    .opt { background: #f7f8fc; }
+    .explain { background: #f0f2fa; color: #3a3d4d; }
+    .usage .u-part { background: #f0f2fa; }
+    .usage .u-text { color: #3a3d4d; }
+    .usage pre { background: #eceef7; color: #23262f; }
+    .question pre.qcode { background: #eceef7; color: #23262f; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topbar">
+      <a class="back" href="../index.html">&larr; Все тесты</a>
+      <div style="display:flex; gap:8px;">
+        
+        <button class="iconbtn" id="syncBtn">☁️ Синхронизировать</button>
+      </div>
+    </div>
+    <h1>BMC и OpenBMC: железо, Redfish, D-Bus, Yocto</h1>
+    <div class="progressbar"><div id="progressFill" style="width:0%"></div></div>
+    <div class="meta">
+      <span id="blockLabel"></span>
+      <span id="progressText">0 / 50</span>
+    </div>
+  </header>
+
+  <div id="quizArea"></div>
+
+  <div id="resultArea" style="display:none"></div>
+
+  <div style="margin-top:24px; text-align:center;">
+    <button class="btn secondary" id="resetBtn">Сбросить прогресс и начать заново</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="syncModal">
+  <div class="modal">
+    <h3>Синхронизация всех тестов с Google Drive</h3>
+    <p id="syncStatus" style="color:var(--muted); font-size:.9rem;">Один вход — синхронизируются сразу все тесты.</p>
+    <button class="btn" id="syncMergeBtn">🔄 Синхронизировать (свежее побеждает)</button>
+    <button class="btn secondary" id="syncUploadBtn">⬆️ Отправить весь прогресс в Drive</button>
+    <button class="btn secondary" id="syncDownloadBtn">⬇️ Загрузить весь прогресс из Drive</button>
+    <button class="btn secondary" id="syncCloseBtn">Закрыть</button>
+  </div>
+</div>
+
+<script src="../config.js"></script>
+<script src="../progress.js"></script>
+<script src="../sync.js"></script>
+<script src="../vendor/katex/katex.min.js"></script>
+<script src="../vendor/katex/auto-render.min.js"></script>
+<script>
+(function () {
+  const TEST_ID = "openbmc_bmc";
+  const QUESTIONS = [{"q": "Что такое BMC?", "options": ["Отдельный компьютер на плате сервера для удалённого управления им", "Часть BIOS/UEFI, которая работает до загрузки ОС и потом выключается", "Служба внутри ОС сервера, которая собирает температуры и шлёт их в сеть", "Модуль коммутатора в стойке, который раздаёт серверам питание и сеть"], "correct": 0, "explain": "BMC (Baseboard Management Controller) — свой процессор, память, флеш, Linux и сеть. Он стоит на плате рядом с основным процессором сервера (его называют хостом), но от него не зависит. Для команды: «BMC — компьютер, который управляет компьютером». Аналогия с RDK-B: в шлюзе второго такого компьютера нет — шлюзом управляют через его же ОС (TR-181 через WebPA или USP), а когда ОС зависла, остаётся только кабель на UART.", "usage": {"code": false, "without": "Сервер в другом городе завис; остаётся звонить в дата-центр и просить кого-то нажать кнопку.", "with": "Через BMC ты сам перезагружаешь сервер и смотришь его консоль, не выходя из дома.", "benefit": "Сервер управляем, даже когда его ОС не отвечает"}}, {"q": "Сервер выключили кнопкой, а BMC продолжает отвечать по сети. Почему?", "options": ["У BMC своя литиевая батарейка, как у часов реального времени на плате", "Кнопка лишь усыпляет процессор, полностью сервер при этом не выключается", "Он питается от дежурной линии, которая есть, пока блок питания в розетке", "BMC держит заряд конденсаторов и отвечает ещё пару минут после выключения"], "correct": 2, "explain": "Блок питания сервера всегда выдаёт дежурное напряжение (standby). От него живут BMC, его сеть и флеш. Основное питание процессора включается только по команде, в том числе от BMC. Для команды: «Выключенный сервер для BMC — просто состояние, которое он умеет менять».", "usage": {"code": true, "without": "# сервер выключен: к его ОС не попасть\nssh admin@host1\n# ssh: connect to host host1 port 22: Connection timed out", "with": "ipmitool -I lanplus -H bmc1 -U admin -E chassis power status\n# Chassis Power is off\nipmitool -I lanplus -H bmc1 -U admin -E chassis power on", "benefit": "Выключенный сервер включают удалённо"}}, {"q": "ОС на сервере зависла, SSH молчит, сервер в другом городе. Что даёт BMC?", "options": ["Перезагрузить сервер, увидеть его экран и консоль — без участия ОС", "Ничего: пока ОС не отвечает, BMC тоже не может связаться с сервером", "Только температуру процессора: остальное BMC получает от агента в ОС", "Переустановку ОС через SSH хоста, если на нём остался открыт порт 22"], "correct": 0, "explain": "BMC не зависит от ОС хоста: у него своё питание, свой процессор и своя сеть. Он может «нажать» reset, показать экран (KVM) и текстовую консоль (Serial over LAN). Для команды: «BMC нужен именно тогда, когда всё остальное уже не работает».", "usage": {"code": true, "without": "ssh admin@host1\n# ssh: connect to host host1 port 22: Connection timed out\n# дальше — звонок в дата-центр", "with": "curl -k -u admin -X POST -H 'Content-Type: application/json' \\\n  -d '{\"ResetType\":\"ForceRestart\"}' \\\n  https://bmc1/redfish/v1/Systems/system/Actions/ComputerSystem.Reset", "benefit": "Зависший сервер перезапускается за минуту, без поездки"}}, {"q": "Чем BMC отличается от агента мониторинга внутри ОС, например Zabbix?", "options": ["Ничем по сути: BMC — тот же агент, только поставлен производителем", "Агент видит больше: BMC читает только температуру и обороты вентиляторов", "BMC работает лишь при загруженной ОС, зато точнее измеряет температуру", "BMC не зависит от ОС хоста: у него свой процессор, сеть и питание"], "correct": 3, "explain": "Агент умирает вместе с ОС и не видит, что было до её загрузки. BMC смотрит на сервер снаружи и работает, даже когда ОС нет. Поэтому всё, что ниже ОС или до неё — питание, самотестирование, ошибки памяти, — видит только BMC, а задачи самой ОС (пакеты, процессы, файрвол) решаются в ОС. Для команды: «Агент — взгляд изнутри, BMC — снаружи». Аналогия с RDK-B: та же разница между телеметрией изнутри ОС (Telemetry 2.0) и UART-консолью: первая молчит, когда ОС зависла, вторая — нет.", "usage": {"code": false, "without": "Сервер не загрузился после обновления BIOS; Zabbix молчит, и непонятно, на каком этапе встала загрузка.", "with": "В журнале событий BMC видно, на каком этапе самотестирования хост остановился и что он сообщил.", "benefit": "Причина видна там, где агент ослеп"}}, {"q": "Какой чип обычно стоит на плате сервера в роли BMC — на месте «?» на схеме?", "options": ["ARM-SoC для BMC: ASPEED AST2500/AST2600/AST2700 или Nuvoton NPCM", "Младший Intel Xeon D, отдельный от основного процессора сервера", "ПЛИС CPLD с логикой включения питания, описанной на Verilog", "Чип сетевой карты хоста, в прошивке которого есть веб-сервер"], "correct": 0, "explain": "Это SoC с ARM-ядрами и периферией именно для BMC: много GPIO и I2C, захват видео, USB-гаджет, контроллер KCS. CPLD на плате тоже бывает, но он отвечает за последовательность питания, а не за управление сервером. В QEMU с образом romulus эмулируется AST2500. Для команды: «BMC — отдельный ARM-чип, чаще всего от ASPEED».", "usage": {"code": true, "without": "# какой у нас BMC? гадать по фото платы\n# и по надписи на радиаторе", "with": "cat /proc/device-tree/compatible | tr '\\0' '\\n'\n# ibm,romulus-bmc\n# aspeed,ast2500", "benefit": "Модель платы и чипа видна за секунду"}, "img": {"src": "img/openbmc_bmc/05.svg", "alt": "Плата сервера: процессор хоста, память, слоты PCIe и отдельный блок BMC с флешем и сетью; модель чипа BMC скрыта под «?»"}}, {"q": "Через какую линию BMC «нажимает» кнопку питания хоста — на месте «?»", "options": ["I2C", "GPIO", "UART", "PCIe"], "correct": 1, "explain": "Ножка GPIO подключена к линии кнопки питания: BMC на долю секунды выставляет её, как палец человека. Другой GPIO-линией он читает PGOOD — «питание в норме». Для команды: «Включение сервера — это BMC, который дёргает ножку».", "usage": {"code": true, "without": "# кнопку питания жмёт человек в зале", "with": "obmcutil poweron\n# дальше state-manager и systemd\n# дёргают GPIO кнопки питания", "benefit": "Кнопку жмёт программа, а не человек в зале"}, "img": {"src": "img/openbmc_bmc/06.svg", "alt": "BMC слева, хост справа; линия от BMC к кнопке питания помечена «?», обратная линия от хоста к BMC — PGOOD"}}, {"q": "По какой шине BMC читает датчики температуры, блоки питания и EEPROM с серийными номерами (на схеме «?»)?", "options": ["I2C и PMBus поверх неё", "SATA, как диски сервера", "PCIe, как видеокарта хоста", "USB, как клавиатура и мышь"], "correct": 0, "explain": "I2C (и совместимая с ней SMBus) — медленная двухпроводная шина для мелких чипов. PMBus — протокол поверх неё для блоков питания и регуляторов напряжения. Для команды: «почти всё здоровье сервера BMC читает по I2C».", "usage": {"code": true, "without": "# какие чипы висят на шине 7?\n# схема платы в PDF на 300 страниц", "with": "i2cdetect -y 7\n# отвечают адреса 0x48 и 0x50\ncat /sys/class/hwmon/hwmon*/temp1_input", "benefit": "Видно, какие устройства отвечают на шине"}, "img": {"src": "img/openbmc_bmc/07.svg", "alt": "От BMC идёт одна шина, помеченная «?»; к ней подключены датчик температуры, блок питания и EEPROM FRU"}}, {"q": "Что такое PGOOD (power good)?", "options": ["Пароль BMC по умолчанию, который печатают на наклейке сбоку корпуса", "Сигнал «питание в норме»: по нему BMC видит, что питание поднялось", "Режим энергосбережения, в который BMC уводит простаивающий хост", "Светодиод на задней панели, показывающий связь с сетью управления"], "correct": 1, "explain": "Нажать кнопку мало, нужно убедиться, что питание включилось. По PGOOD BMC меняет состояние питания корпуса на «включено» (CurrentPowerState у chassis0). Нет PGOOD — нет и подтверждения, что питание поднялось. Для команды: «BMC не только командует, но и проверяет результат по проводу».", "usage": {"code": true, "without": "# нажали кнопку и ждём: включился или нет?", "with": "busctl get-property xyz.openbmc_project.State.Chassis \\\n  /xyz/openbmc_project/state/chassis0 \\\n  xyz.openbmc_project.State.Chassis CurrentPowerState\n# s \"xyz.openbmc_project.State.Chassis.PowerState.On\"", "benefit": "Включение подтверждено проводом, а не надеждой"}}, {"q": "Как BMC показывает текстовую консоль сервера (Serial over LAN)?", "options": ["UART хоста заведён на BMC, и BMC пересылает поток по сети", "Агент в ОС хоста пересылает вывод терминала на BMC по SSH", "BMC распознаёт текст на кадрах видео, снятых с экрана хоста", "Хост шлёт строки консоли по шине I2C пакетами по 32 байта"], "correct": 0, "explain": "В OpenBMC это obmc-console: он читает UART хоста и отдаёт его по SSH (по умолчанию порт 2200), по IPMI SOL или в веб-интерфейс. Консоль видна с первых строк загрузки, ещё до ОС. Для команды: «Консоль сервера видна, даже когда сеть хоста не поднялась». Аналогия с RDK-B: это тот же UART, к которому подключаются кабелем к шлюзу, только здесь «кабель» постоянно держит BMC и выдаёт его в сеть.", "usage": {"code": true, "without": "# консоль хоста — только кабелем,\n# в зале, у самой стойки", "with": "ssh -p 2200 root@bmc1\n# вывод UEFI и ядра хоста в реальном времени", "benefit": "Консоль хоста доступна из любой точки сети управления"}}, {"q": "У BMC на этой плате нет своего сетевого порта: один кабель идёт в сетевую карту хоста. Как BMC выходит в сеть?", "options": ["Через KCS: BMC отдаёт пакеты драйверу ОС хоста, и та их шлёт", "По NC-SI — боковому каналу DMTF между BMC и сетевой картой", "По PMBus: карта получает от BMC кадры вместе с командами питания", "По UART: сетевая карта превращает поток консоли в пакеты Ethernet"], "correct": 1, "explain": "NC-SI (Network Controller Sideband Interface, стандарт DMTF) — боковой канал между BMC и сетевой картой хоста. Карта пропускает трафик BMC на тот же кабель, поэтому BMC и хост выходят в сеть через один порт. ОС хоста для этого не нужна. Для команды: «Отдельный кабель для BMC не обязателен: есть NC-SI».", "usage": {"code": false, "without": "В стойке не хватает портов коммутатора, чтобы к каждому серверу вести отдельный кабель управления.", "with": "BMC ходит в сеть через сетевую карту хоста по NC-SI, и к серверу идёт один кабель.", "benefit": "Меньше кабелей и портов в стойке"}, "img": {"src": "img/openbmc_bmc/10.svg", "alt": "Плата: BMC без своего порта, CPU хоста и сетевая карта хоста; CPU связан с картой по PCIe, BMC — линией «?»; от карты один кабель в коммутатор"}}, {"q": "KVM over IP: как BMC видит экран сервера?", "options": ["Отдельный HDMI-кабель с задней панели заведён в разъём захвата на BMC", "Драйвер в ОС хоста делает снимки экрана и отправляет их BMC по сети", "Хост выводит экран на видеоконтроллер внутри BMC, а BMC снимает кадры", "BMC собирает картинку из текста, который хост пишет в консоль UART"], "correct": 2, "explain": "В BMC есть видеоконтроллер, подключённый к хосту по PCIe, — для хоста это его видеокарта. Поэтому экран виден с первых секунд, ещё в BIOS. В OpenBMC кадры сжимает и отдаёт obmc-ikvm по протоколу VNC, а веб-интерфейс показывает их через websocket bmcweb. Для команды: «KVM работает до ОС, потому что видеокарта сервера — часть BMC».", "usage": {"code": false, "without": "Сервер стоит на экране настройки BIOS, а по SSH и консоли ничего не видно.", "with": "В веб-интерфейсе BMC открываешь KVM, видишь меню BIOS и нажимаешь нужную клавишу.", "benefit": "Экран и клавиатура сервера — в браузере"}}, {"q": "Что такое виртуальный носитель (Virtual Media)?", "options": ["Раздел флеш-памяти BMC, куда пишутся журналы и дампы памяти при сбое", "RAM-диск в памяти хоста, который BMC создаёт перед загрузкой ОС", "BMC изображает для хоста USB-флешку и отдаёт ему образ ISO по сети", "Облачное хранилище производителя для резервных копий прошивки BMC"], "correct": 2, "explain": "Так ставят ОС на сервер в другом городе: админ подключает ISO в веб-интерфейсе BMC, хост видит флешку и грузится с неё. BMC работает как USB-гаджет, а данные образа берёт по сети. Для команды: «Флешку в сервер вставляют по сети».", "usage": {"code": false, "without": "Чтобы переустановить ОС, кто-то в дата-центре вставляет флешку и выбирает её в меню загрузки.", "with": "Админ подключает ISO через веб-интерфейс BMC и ставит загрузку с виртуального носителя.", "benefit": "ОС переустанавливается без визита в зал"}}, {"q": "Что такое FRU и что BMC делает с его данными?", "options": ["Сменный узел; модель и серийный номер из его EEPROM идут в inventory", "Регулятор вентиляторов; BMC пишет в него кривые оборотов по зонам", "Режим восстановления; BMC берёт из него образ при сбое обновления", "Тип разъёма питания; BMC сверяет его с паспортом блока питания"], "correct": 0, "explain": "FRU — Field Replaceable Unit, заменяемый узел: плата, блок питания, модуль. В его EEPROM записаны модель, серийный номер, производитель. BMC читает их по I2C и строит inventory — каталог железа на D-Bus (/xyz/openbmc_project/inventory/…): что стоит, что присутствует, с какими номерами. Inventory связывает остальное: датчик знает, к какому узлу относится, а запись журнала — какой узел отказал. Для команды: «BMC знает, из чего собран сервер, не вскрывая корпус».", "usage": {"code": true, "without": "# какой серийник у блока питания №2?\n# снять крышку и прочитать наклейку", "with": "ipmitool -I lanplus -H bmc1 -U admin -E fru print\n# или Redfish: /redfish/v1/Chassis", "benefit": "Серийные номера всех узлов видны удалённо"}}, {"q": "Что BMC передаёт по MCTP — на месте «?» на схеме?", "options": ["Видеопоток экрана хоста для KVM, сжатый по протоколу VNC и шифрованный TLS", "Питание и сигналы сброса для GPU, NVMe и сетевых карт по отдельным линиям", "Пользовательский трафик сервера, когда основной порт сетевой карты занят", "Сообщения PLDM и SPDM: датчики, обновление прошивок, проверка подлинности"], "correct": 3, "explain": "MCTP — транспорт DMTF поверх I2C/SMBus, I3C или PCIe. Он нужен устройствам со своей прошивкой: BMC спрашивает у GPU температуру по PLDM type 2, обновляет его прошивку по PLDM type 5 и проверяет подлинность устройства по SPDM. Для команды: «MCTP — сеть внутри сервера между BMC и умными устройствами».", "usage": {"code": true, "without": "# температуру GPU знает только драйвер в ОС хоста;\n# ОС упала — данных нет", "with": "mctp link\npldmtool base GetPLDMTypes -m 9\n# какие типы PLDM понимает устройство с EID 9", "benefit": "Датчики и прошивки устройств видны BMC без ОС хоста"}, "img": {"src": "img/openbmc_bmc/14.svg", "alt": "BMC слева, справа GPU, сетевая карта и NVMe; между ними стек: «?» сверху, под ним MCTP — транспорт, внизу шины I2C, I3C, PCIe"}}, {"q": "Что такое KCS?", "options": ["Набор шифров Redfish, которым bmcweb защищает сессии HTTPS с клиентами", "Шина вентиляторов, по которой BMC читает тахометры и задаёт скважность PWM", "Тип флеш-памяти BMC, в которой лежат обе копии прошивки и настройки", "Канал IPMI из ОС хоста к BMC через регистры на шине eSPI/LPC, без сети"], "correct": 3, "explain": "KCS (Keyboard Controller Style) — интерфейс IPMI внутри сервера. Так работает ipmitool, запущенный на самом сервере через /dev/ipmi0: запрос идёт по шине до BMC, без сети. Это доступ in-band, в отличие от out-of-band по сети управления. Для команды: «К BMC можно прийти и снаружи по сети, и изнутри сервера».", "usage": {"code": true, "without": "# сеть управления из ОС хоста недоступна\nipmitool -I lanplus -H bmc1 -U admin -E mc info\n# Error: Unable to establish IPMI v2 / RMCP+ session", "with": "# на самом сервере, через /dev/ipmi0\nipmitool mc info\nipmitool sel list", "benefit": "До BMC можно достучаться из ОС без сети"}}, {"q": "Какой процесс превращает значение из ядра в объект датчика на D-Bus — на месте «?» на схеме?", "options": ["bmcweb, когда клиент запрашивает датчики через Redfish", "systemd: он запускает юнит на каждый файл в /sys/class/hwmon", "obmcutil: он опрашивает hwmon и пишет значения на шину", "dbus-sensors, на старых платформах — phosphor-hwmon"], "correct": 3, "explain": "Ядро отдаёт значение в /sys/class/hwmon. dbus-sensors читает его и публикует объект /xyz/openbmc_project/sensors/temperature/… с интерфейсом xyz.openbmc_project.Sensor.Value. Дальше его берут bmcweb (Redfish) и регулятор вентиляторов. Для команды: «Для всех программ BMC датчик — это объект на D-Bus». Аналогия с RDK-B: так OneWifi получает статистику радио из ядра через rdk-wifi-hal и nl80211 и публикует её параметрами TR-181 на rbus.", "usage": {"code": true, "without": "cat /sys/class/hwmon/hwmon3/temp1_input\n# 41250 — а что это за датчик и где он стоит?", "with": "busctl tree xyz.openbmc_project.HwmonTempSensor\nbusctl get-property xyz.openbmc_project.HwmonTempSensor \\\n  /xyz/openbmc_project/sensors/temperature/Inlet_Temp \\\n  xyz.openbmc_project.Sensor.Value Value", "benefit": "У значения есть имя, единицы и пороги"}, "img": {"src": "img/openbmc_bmc/16.svg", "alt": "Путь значения датчика: чип на I2C → драйвер hwmon в ядре → «?» → объект на D-Bus → потребители"}}, {"q": "Откуда dbus-sensors узнаёт, какие датчики есть на конкретной плате?", "options": ["Для каждой платы dbus-sensors собирают отдельно, с таблицей датчиков в коде", "Сканирует все шины I2C при старте и заводит датчик на всё, что ответило", "Из JSON-конфигов entity-manager, чьё условие Probe совпало для этой платы", "Получает список от BIOS хоста по IPMI после каждого включения сервера"], "correct": 2, "explain": "Один и тот же бинарник dbus-sensors работает на разных платах. Отличия описаны данными: адреса I2C, типы датчиков, пороги. Entity-manager проверяет условие Probe каждого конфига (например, по данным FRU) и при совпадении публикует конфигурацию платы на D-Bus, а dbus-sensors по ней создаёт датчики. Для команды: «В OpenBMC новую плату описывают JSON-файлом, а не новым кодом». Аналогия с RDK-B: там отличия платформы спрятаны в HAL (например, rdk-wifi-hal), то есть в коде; OpenBMC идёт дальше — отличия становятся данными.", "usage": {"code": true, "without": "# новая плата = форк dbus-sensors\n# и патч с таблицей датчиков", "with": "{\n  \"Name\": \"My Board\",\n  \"Type\": \"Board\",\n  \"Probe\": \"xyz.openbmc_project.FruDevice({'BOARD_PRODUCT_NAME': 'MyBoard'})\",\n  \"Exposes\": [\n    {\"Name\": \"Inlet_Temp\", \"Type\": \"TMP75\", \"Bus\": 7, \"Address\": \"0x48\"}\n  ]\n}", "benefit": "Новая плата — это новый JSON, а не новый код"}}, {"q": "Что делает phosphor-pid-control?", "options": ["Читает температуры, считает PID и задаёт обороты вентиляторов по зонам", "Хранит пароли и права пользователей BMC и проверяет их при каждом входе", "Следит за процессами BMC и перезапускает упавшие, как сторожевой таймер", "Пересылает консоль хоста в веб-интерфейс и ограничивает скорость потока"], "correct": 0, "explain": "Вентиляторы разбиты на зоны, у каждой свои датчики и свой регулятор. Если датчик зоны пропал или перестал обновляться, зона уходит в безопасный режим (failsafe) с высокими оборотами. Для команды: «Охлаждением сервера управляет BMC, а не ОС».", "usage": {"code": false, "without": "Вентиляторы всегда крутятся на полную: в машинном зале шумно, а заметная доля электричества уходит на охлаждение.", "with": "Обороты следуют за температурой зоны: в простое тихо, под нагрузкой быстрее.", "benefit": "Охлаждение по нагрузке, а при сбое датчика — с запасом"}}, {"q": "Где живёт журнал аппаратных событий в OpenBMC?", "options": ["В объектах logging/entry/N на D-Bus; наружу — Redfish EventLog и IPMI SEL", "Только в dmesg хоста: BMC передаёт туда события по шине KCS", "В энергонезависимой памяти BIOS, откуда его читает ОС при загрузке", "В файле на диске хоста, который BMC пишет через виртуальный носитель"], "correct": 0, "explain": "phosphor-logging хранит каждую запись как объект /xyz/openbmc_project/logging/entry/N: сообщение, уровень, время и связи с железом. Записи можно найти через ObjectMapper, получить через Redfish и подписаться на новые. Для команды: «Событие железа — тоже объект на D-Bus». Аналогия с RDK-B: там компоненты пишут логи в файлы, а сводки уходят через Telemetry 2.0; в OpenBMC журнал можно запрашивать по полям.", "usage": {"code": true, "without": "# что случилось ночью? листать dmesg хоста,\n# который тогда был выключен", "with": "busctl tree xyz.openbmc_project.Logging\ncurl -k -u admin \\\n  https://bmc1/redfish/v1/Systems/system/LogServices/EventLog/Entries", "benefit": "События железа видны даже при выключенном хосте"}}, {"q": "Зачем у BMC две копии прошивки, A и B (на схеме)?", "options": ["Одна копия обслуживает IPMI, другая — Redfish, чтобы протоколы не мешали", "Новую версию пишут в неактивную копию, а рабочая остаётся запасной", "Вторая — зеркало первой: BMC пишет в обе сразу, как в RAID 1", "Копия B хранит журнал событий и настройки сети, копия A — программы"], "correct": 1, "explain": "Обновление не должно превращать сервер в «кирпич»: работающая копия не трогается, пока новая не доказала, что грузится. Если новая не поднялась, BMC загружается со старой. В зеркале, как в RAID 1, плохой образ испортил бы обе копии сразу. Для команды: «Обновлять BMC безопасно, потому что старая версия остаётся рядом». Аналогия с RDK-B: у многих шлюзов так же — два банка прошивки, новый образ пишется в неактивный.", "usage": {"code": true, "without": "# одна копия: обновление прервалось на середине,\n# BMC не грузится — программатор и поездка в зал", "with": "curl -k -u admin https://bmc1/redfish/v1/UpdateService/FirmwareInventory\n# версии прошивок BMC и других узлов", "benefit": "Неудачное обновление не убивает BMC"}, "img": {"src": "img/openbmc_bmc/20.svg", "alt": "Новый образ v2.15 со стрелкой «?» к флешу BMC, на котором две копии A и B, обе с версией v2.14"}}, {"q": "Что BMC проверяет у нового образа прошивки перед установкой?", "options": ["Контрольную сумму MD5 из имени файла, чтобы файл не побился в пути", "Цифровую подпись: образ подписан ключом, которому BMC доверяет", "Размер образа: он должен совпасть с размером флеш-памяти до байта", "Имя файла: оно должно начинаться с названия модели платы сервера"], "correct": 1, "explain": "Иначе любой с доступом к BMC мог бы залить свою прошивку. В OpenBMC служба обновления phosphor-bmc-code-mgmt умеет проверять подпись образа открытыми ключами, записанными в BMC; на платформах с включённой проверкой чужой образ отклоняется. Снаружи образ загружают через Redfish UpdateService. Для команды: «Чужой образ BMC с проверкой подписи не примет».", "usage": {"code": false, "without": "Кто-то с паролем админа заливает в BMC изменённый образ и получает постоянный доступ к серверу.", "with": "BMC отклоняет образ без подписи доверенным ключом, установленная версия остаётся.", "benefit": "В BMC попадает только прошивка от того, кому доверяешь"}}, {"q": "Что ещё обновляет BMC, кроме своей прошивки?", "options": ["Только себя: прошивки хоста и устройств обновляют из ОС сервера", "BIOS хоста, CPLD и прошивки устройств, например GPU по PLDM type 5", "ОС хоста: BMC ставит в неё пакеты по SSH, пока сервер работает", "Драйверы в ОС хоста: BMC подкладывает их через виртуальный носитель"], "correct": 1, "explain": "BMC — центральная точка обновления всего сервера. Для устройств со своей прошивкой есть стандарт DMTF PLDM type 5 (Firmware Update) поверх MCTP; NVIDIA отправляет свою реализацию этого стека в основной OpenBMC. Для команды: «Через BMC обновляют прошивки всего сервера, а не только его самого».", "usage": {"code": false, "without": "BIOS, CPLD и прошивки GPU обновляют разными утилитами из ОС, у каждой свои правила и перезагрузки.", "with": "Все образы загружаются через Redfish UpdateService одного BMC, версии видны в FirmwareInventory.", "benefit": "Одна точка обновления на весь сервер"}}, {"q": "IPMI по сети — на каком транспорте он работает (на схеме «?»)?", "options": ["TCP, порт 623, поверх TLS", "UDP, порт 161, как SNMP", "UDP, порт 623, RMCP+", "TCP, порт 5900, как VNC"], "correct": 2, "explain": "IPMI по сети — двоичные сообщения RMCP+ поверх UDP 623. Redfish — HTTPS на порту 443. В OpenBMC оба приходят к одному D-Bus: IPMI через netipmid и ipmid, Redfish через bmcweb. Для команды: «Снаружи два протокола, внутри один D-Bus».", "usage": {"code": true, "without": "# в файрволе открыли TCP 623 —\n# ipmitool всё равно не достучался", "with": "# файрвол сети управления: UDP 623 — IPMI, TCP 443 — Redfish\nipmitool -I lanplus -H bmc1 -U admin -E chassis status", "benefit": "Файрвол открыт ровно под нужные протоколы"}, "img": {"src": "img/openbmc_bmc/23.svg", "alt": "Два столбца: IPMI — ipmitool → «?» → netipmid и ipmid; Redfish — curl → HTTPS 443 → bmcweb; оба сходятся в D-Bus внутри BMC"}}, {"q": "Что такое Redfish?", "options": ["REST-API с JSON поверх HTTPS — стандарт DMTF для управления серверами", "Двоичный протокол управления серверами, первая версия вышла в 1998 году", "Протокол шины D-Bus, по которому общаются демоны внутри прошивки BMC", "Формат журнала событий BMC, который выгружают по SNMP и через syslog"], "correct": 0, "explain": "Ресурсы адресуются URL, данные — JSON по опубликованным схемам, действия — POST на Actions. Стандарт задаёт общую модель (Systems, Chassis, Managers) и общий протокол, поэтому один скрипт работает с серверами разных производителей. Двоичный протокол 1998 года — это IPMI. Для команды: «Redfish — это curl и JSON вместо ipmitool и байтов». Аналогия с RDK-B: смена IPMI на Redfish похожа на смену TR-069 на USP (TR-369) с моделью данных TR-181 — открытые стандарты, одинаковые у разных производителей, а старый протокол годами живёт рядом ради совместимости.", "usage": {"code": true, "without": "ipmitool -I lanplus -H bmc1 -U admin -E sdr list\n# у каждого производителя свои OEM-команды", "with": "curl -k -u admin https://bmc1/redfish/v1/Chassis\n# одна и та же модель данных у разных производителей", "benefit": "Один скрипт на весь парк серверов"}}, {"q": "С какого пути начинается любой Redfish-сервис?", "options": ["`/redfish/v1`", "`/api/v2`", "`/xyz/openbmc_project`", "`/cgi-bin/ipmi`"], "correct": 0, "explain": "GET /redfish/v1 возвращает корень сервиса со ссылками на коллекции: Systems, Chassis, Managers, UpdateService и другие. Путь /xyz/openbmc_project — внутренние объекты D-Bus, снаружи их не видно. Для команды: «Снаружи пути Redfish, внутри пути D-Bus — это разные пространства имён».", "usage": {"code": true, "without": "# угадывать URL по документации производителя\ncurl -k https://bmc1/api/v2/power", "with": "curl -k https://bmc1/redfish/v1\n# ссылки: Systems, Chassis, Managers, UpdateService…", "benefit": "Любой сервис обходится от корня по ссылкам"}}, {"q": "В Redfish есть коллекции Systems, Chassis и Managers. Что лежит в Managers?", "options": ["Учётные записи администраторов сервера и их роли", "Процессы хоста и их потребление процессора и памяти", "Сам BMC: его сеть, версия прошивки, перезагрузка", "Блоки питания и вентиляторы вместе с их датчиками"], "correct": 2, "explain": "Systems — хост: процессоры, память, питание и загрузка ОС. Chassis — физический корпус: датчики, вентиляторы, блоки питания. Managers — контроллер управления, то есть BMC. Пользователи живут в отдельном AccountService. Для команды: «Systems — чем управляем, Chassis — в чём это лежит, Managers — кто управляет».", "usage": {"code": true, "without": "# перезагрузить BMC — значит обесточить сервер", "with": "curl -k -u admin -X POST -H 'Content-Type: application/json' \\\n  -d '{\"ResetType\":\"GracefulRestart\"}' \\\n  https://bmc1/redfish/v1/Managers/bmc/Actions/Manager.Reset", "benefit": "BMC перезапускают, не трогая хост"}}, {"q": "Какой запрос включает сервер через Redfish?", "options": ["POST на …/Actions/ComputerSystem.Reset с телом ResetType: On", "GET на …/Systems/system/Power/On, параметры — в строке запроса", "PUT на …/xyz/openbmc_project/state/host0 со значением On в теле", "PATCH на …/Systems/system со свойством PowerState, равным On"], "correct": 0, "explain": "Действия в Redfish — это POST на Actions. bmcweb превращает запрос в запись свойства RequestedHostTransition = On у объекта host0 на D-Bus. PowerState только для чтения: его меняют действием, а не PATCH. Для команды: «Одна строка curl — и запрос проходит всю цепочку до GPIO».", "usage": {"code": true, "without": "ipmitool -I lanplus -H bmc1 -U admin -E chassis power on\n# работает, но только на BMC с IPMI по LAN", "with": "curl -k -u admin -X POST -H 'Content-Type: application/json' \\\n  -d '{\"ResetType\":\"On\"}' \\\n  https://bmc1/redfish/v1/Systems/system/Actions/ComputerSystem.Reset", "benefit": "Тот же результат по стандарту, который понимает любой Redfish-сервис"}}, {"q": "Почему IPMI по сети не выставляют в открытую сеть?", "options": ["Он слишком медленный: на каждый пакет BMC отвечает секунду", "Он работает только поверх USB, и в сеть его просто не вывести", "В IPMI 2.0 вообще нет паролей, вход открыт любому по адресу", "RAKP в IPMI 2.0 отдаёт хеш пароля, который перебирают офлайн"], "correct": 3, "explain": "Протокол аутентификации RAKP в IPMI 2.0 устроен так, что BMC отдаёт хеш пароля ещё до входа, и его можно перебирать офлайн. Добавь исторически слабые наборы шифров и пароли по умолчанию. Поэтому BMC держат в отдельной сети управления, а IPMI по сети часто выключают совсем. Для команды: «Сеть управления BMC всегда отдельная, а IPMI по LAN лучше выключить».", "usage": {"code": false, "without": "BMC с включённым IPMI по LAN виден из офисной сети, хеш пароля админа получает любой, кто спросит.", "with": "BMC стоит в отдельной сети управления, IPMI по LAN выключен, снаружи — только Redfish по HTTPS.", "benefit": "Пароль BMC нельзя унести и перебрать дома"}}, {"q": "Какой процесс на BMC принимает Redfish-запрос — на месте «?» на схеме?", "options": ["ipmid", "nginx", "bmcweb", "obmc-console"], "correct": 2, "explain": "bmcweb — веб-сервер на C++: Redfish, веб-интерфейс, websocket для KVM и консоли. С железом он ничего не делает, только переводит запросы в D-Bus. Для команды: «bmcweb — переводчик с Redfish на D-Bus». Аналогия с RDK-B: похожая роль у агентов удалённого управления — WebPA (через parodus) и USP-агента: они принимают внешний запрос и превращают его в параметры TR-181 на rbus.", "usage": {"code": true, "without": "# Redfish не отвечает — перезагружать весь BMC", "with": "systemctl status bmcweb\njournalctl -u bmcweb -f", "benefit": "Неисправность веб-слоя ищут в одном процессе"}, "img": {"src": "img/openbmc_bmc/29.svg", "alt": "Цепочка включения сервера из шести шагов: админ с curl → «?» → D-Bus → phosphor-state-manager → systemd → GPIO хоста"}}, {"q": "Что на месте «?» между bmcweb и phosphor-state-manager?", "options": ["HTTP", "D-Bus", "SMBus", "UART"], "correct": 1, "explain": "bmcweb записывает свойство RequestedHostTransition у объекта host0, а его владелец phosphor-state-manager получает вызов Set и действует. D-Bus — шина сообщений между процессами внутри Linux на BMC, наружу она не выходит. Для команды: «Все программы BMC разговаривают через D-Bus». Аналогия с RDK-B: на этом месте rbus — WebPA или USP-агент пишет параметр, OneWifi получает его и действует.", "usage": {"code": true, "without": "# кто кому что сказал? читать логи трёх демонов", "with": "busctl monitor xyz.openbmc_project.State.Host\n# видно Set RequestedHostTransition и PropertiesChanged", "benefit": "Разговор процессов виден вживую"}, "img": {"src": "img/openbmc_bmc/30.svg", "alt": "Цепочка включения сервера: админ → bmcweb → «?» → phosphor-state-manager → systemd → GPIO хоста"}}, {"q": "Что такое интерфейс в D-Bus, например xyz.openbmc_project.State.Host?", "options": ["Сетевой интерфейс вроде eth0, через который демон слушает свою шину", "Имя процесса, под которым демон зарегистрирован на системной шине", "Именованный набор свойств, методов и сигналов у объекта", "Файл в /sys, из которого демон читает значения своего устройства"], "correct": 2, "explain": "У одного объекта бывает несколько интерфейсов: стандартные org.freedesktop.DBus.* (например, Properties с методами Get, GetAll, Set) и свои xyz.openbmc_project.* — у host0 это состояние хоста, ход загрузки и другие. Имя процесса на шине — сервис, /xyz/openbmc_project/state/host0 — объект, а интерфейс говорит, что объект умеет. Для команды: «Объект — что это, интерфейс — что оно умеет». Аналогия с RDK-B: похоже на объект TR-181 вида Device.WiFi.Radio.{i}. — набор параметров с типами, который реализует компонент.", "usage": {"code": true, "without": "# какие свойства у host0? искать в исходниках", "with": "busctl introspect xyz.openbmc_project.State.Host \\\n  /xyz/openbmc_project/state/host0", "benefit": "Все интерфейсы объекта видны одной командой"}}, {"q": "Где описаны интерфейсы OpenBMC: имена свойств, типы, допустимые значения?", "options": ["В JSON-схемах Redfish, которые bmcweb отдаёт клиентам по запросу", "В YAML-файлах phosphor-dbus-interfaces; по ним генерируется C++-код", "В device tree платы, рядом с описанием шин I2C и линий GPIO чипа", "В юнитах systemd: каждый сервис объявляет свойства в секции [Service]"], "correct": 1, "explain": "Это контракт между процессами: bmcweb и phosphor-state-manager пишут разные люди, но собирают их против одного описания; sdbusplus генерирует из YAML C++-код. Схема Redfish — отдельный, внешний контракт. Для команды: «Внутренний API BMC описан в одном репозитории YAML-файлов». Аналогия с RDK-B: параметры TR-181 там описаны XML-файлами модели данных в компонентах.", "usage": {"code": true, "without": "# опечатка в имени свойства всплывает только\n# на плате, во время работы", "with": "# yaml/xyz/openbmc_project/State/Host.interface.yaml\nproperties:\n  - name: RequestedHostTransition\n    type: enum[self.Transition]", "benefit": "Несовпадение имён и типов ловится при сборке"}}, {"q": "bmcweb знает путь объекта и интерфейс, но не знает, какой сервис ими владеет (на схеме «?»). Как он его находит?", "options": ["Спрашивает ObjectMapper — индекс «путь → сервис → интерфейсы»", "Перебирает все сервисы на шине и вызывает у каждого Introspect", "Берёт имя сервиса из своего конфига, записанного при сборке", "Посылает широковещательный сигнал и ждёт, кто отзовётся первым"], "correct": 0, "explain": "Каждый демон публикует свои объекты, а ObjectMapper (xyz.openbmc_project.ObjectMapper) следит за шиной и строит индекс. Запросы GetObject и GetSubTree — первое, что делает почти любой обработчик в bmcweb. Для команды: «ObjectMapper — справочная служба D-Bus». Аналогия с RDK-B: эту роль играл Component Registrar (CcspCr) — он знал, какой компонент обслуживает какую ветку TR-181; в rbus провайдеры регистрируют свои параметры у брокера.", "usage": {"code": true, "without": "# имя сервиса зашито в код:\n# сменили демон — сломался вызов", "with": "busctl call xyz.openbmc_project.ObjectMapper \\\n  /xyz/openbmc_project/object_mapper \\\n  xyz.openbmc_project.ObjectMapper GetObject sas \\\n  /xyz/openbmc_project/state/host0 0", "benefit": "Код не зависит от того, какой демон владеет объектом"}, "img": {"src": "img/openbmc_bmc/33.svg", "alt": "Дерево D-Bus лесенкой: сервис «?», под ним объект /xyz/openbmc_project/state/host0, интерфейс xyz.openbmc_project.State.Host, свойство CurrentHostState"}}, {"q": "Как процесс узнаёт, что свойство на D-Bus изменилось, не опрашивая его по кругу?", "options": ["Раз в секунду вызывает Get и сравнивает с прошлым значением", "Подписывается на сигнал PropertiesChanged этого объекта", "Ждёт от systemd перезапуска юнита, который владеет свойством", "Читает журнал journald, куда шина пишет каждое изменение"], "correct": 1, "explain": "Свойства, помеченные emits-change, при каждом изменении рассылают сигнал PropertiesChanged. Так регулятор вентиляторов следит за датчиками без опроса. busctl monitor показывает эти сигналы вживую. Для команды: «На D-Bus не опрашивают, а подписываются». Аналогия с RDK-B: в rbus то же самое — подписка на событие параметра (rbusEvent_Subscribe).", "usage": {"code": true, "without": "while true; do\n  busctl get-property xyz.openbmc_project.State.Host \\\n    /xyz/openbmc_project/state/host0 \\\n    xyz.openbmc_project.State.Host CurrentHostState\n  sleep 1\ndone", "with": "busctl monitor --match=\"type='signal',member='PropertiesChanged'\"", "benefit": "Изменение приходит сразу и без лишней нагрузки"}}, {"q": "Где в дереве OpenBMC живёт поддержка самого чипа BMC: ядро, U-Boot, драйверы GPIO и I2C?", "options": ["В meta-phosphor, рядом с bmcweb и демонами phosphor-*", "В слое платформы, рядом с конфигами датчиков платы", "В poky, вместе с ядром и U-Boot для всех машин Yocto", "В слое чипа: meta-aspeed или meta-nuvoton"], "correct": 3, "explain": "Три уровня: meta-phosphor — программы OpenBMC, meta-aspeed (или meta-nuvoton) — поддержка чипа, слой платформы — что припаяно к этому чипу на конкретной плате. Для команды: «Программы, чип и плата живут в трёх разных слоях». Аналогия с RDK-B: тот же принцип — общие слои RDK (например, meta-rdk-broadband), рядом слой SoC и слой конкретного устройства.", "usage": {"code": true, "without": "# патч ядра для GPIO положили в слой одной платы —\n# у соседней платы на том же чипе баг остался", "with": "bitbake-layers show-recipes linux-aspeed\n# linux-aspeed: meta-aspeed", "benefit": "Исправление чипа получают все платы на нём"}}, {"q": "Где лежат исходники bmcweb?", "options": ["В каталоге bmcweb/ внутри openbmc/openbmc, рядом с рецептом", "В ядре Linux для BMC, в каталоге drivers/net/web рядом с сетью", "В репозитории openbmc/bmcweb; в openbmc/openbmc — только рецепт", "Внутри образа QEMU: их распаковывают при первом запуске эмулятора"], "correct": 2, "explain": "openbmc/openbmc — сборочное дерево: poky, meta-слои и рецепты. У каждого компонента свой репозиторий, а рецепт указывает, что взять: SRC_URI и SRCREV — коммит. Для команды: «Дерево сборки и код компонентов — разные репозитории». Аналогия с RDK-B: так же устроен OneWifi — код в отдельном репозитории rdkcentral, а в слое RDK только рецепт.", "usage": {"code": true, "without": "# правка прямо в tmp/work/…/bmcweb\n# пропадёт при следующей чистке", "with": "devtool modify bmcweb\n# исходники по SRCREV рецепта —\n# в workspace/sources/bmcweb, под git", "benefit": "Правка живёт в git, а не во временном каталоге"}}, {"q": "Через что phosphor-state-manager включает хост — на месте «?» на схеме?", "options": ["ipmid: state-manager отправляет ему IPMI-команду Chassis Control", "U-Boot BMC: при каждом включении хоста BMC перезагружается", "obmc-console: команда включения уходит в консоль хоста", "systemd: target obmc-host-start@0, юниты которого дёргают GPIO"], "correct": 3, "explain": "Последовательность включения описана зависимостями юнитов systemd: target obmc-host-start@0 тянет за собой юниты, которые дёргают GPIO и ждут PGOOD. На x86-платформах ту же работу часто делает один демон x86-power-control, но объект host0 на D-Bus тот же. Для команды: «Логика питания в OpenBMC — это граф юнитов systemd». Аналогия с RDK-B: systemd есть и там, но там он только запускает процессы компонентов, а здесь описывает саму последовательность питания.", "usage": {"code": true, "without": "# включение «висит» — непонятно, на каком шаге", "with": "systemctl list-dependencies obmc-host-start@0.target\nsystemctl list-jobs", "benefit": "Видно, какой шаг включения не прошёл"}, "img": {"src": "img/openbmc_bmc/37.svg", "alt": "Цепочка включения сервера: админ → bmcweb → D-Bus → phosphor-state-manager → «?» → GPIO хоста"}}, {"q": "Где проходит ревью кода OpenBMC?", "options": ["В pull request на GitHub: у каждого репозитория своя ветка ревью", "В Gerrit на gerrit.openbmc.org; GitHub — только зеркало", "В трекере Jira проекта, патчи прикладывают к задачам", "В GitLab Linux Foundation: merge request в каждый репозиторий"], "correct": 1, "explain": "Изменение отправляют в Gerrit, после ревью оно попадает в репозиторий компонента. Потом в openbmc/openbmc рецепт переходит на новый SRCREV. Репозитории на GitHub — зеркала. Для команды: «Правки в OpenBMC идут через Gerrit, а не через GitHub».", "usage": {"code": true, "without": "git push origin my-fix\n# PR на GitHub-зеркале никто не смотрит", "with": "git commit -s\ngit push origin HEAD:refs/for/master\n# ревью — на gerrit.openbmc.org", "benefit": "Правка попадает к ревьюерам, а не в забытый PR"}}, {"q": "Что верно про NVIDIA и OpenBMC?", "options": ["NVIDIA ставит на свои платы только закрытые прошивки BMC сторонних фирм", "OpenBMC работает только на серверах IBM POWER, другие платформы не поддержаны", "NVIDIA запретила OpenBMC на своих платах из-за лицензии GPL у ядра", "BMC на BlueField — это OpenBMC, и NVIDIA отдаёт доработки в основной проект"], "correct": 3, "explain": "По документации NVIDIA BlueField BMC программная часть BMC построена на OpenBMC и собирается Yocto. NVIDIA отправляет доработки в основной OpenBMC, например стек обновления прошивок PLDM type 5 (об этом писал Phoronix). OpenBMC — проект Linux Foundation; его используют Google, Meta, Microsoft, IBM и другие: свой код можно исправить самим, не дожидаясь производителя, и он одинаков на платах разных фирм. Для команды: «Для BlueField OpenBMC — не теория, а рабочий стек».", "usage": {"code": false, "without": "Ты изучаешь BMC BlueField по рекламным брошюрам и пересказам.", "with": "Ты читаешь исходники OpenBMC: bmcweb, phosphor-*, pldm — на этой базе и построен BMC BlueField.", "benefit": "Устройство BMC изучается по открытому коду"}}, {"q": "OCP выносит BMC и корень доверия на сменную карту DC-SCM, как на схеме. Что это даёт?", "options": ["BMC получает отдельное питание и работает без дежурного напряжения", "BMC уходит из сети управления в сеть хоста, отдельный кабель не нужен", "Одна карта управления подходит к разным материнским платам", "Карту охлаждают отдельно: BMC греется сильнее основного процессора"], "correct": 2, "explain": "DC-SCM (Datacenter-ready Secure Control Module) — стандарт Open Compute Project. Разъём и сигналы между картой и материнской платой описывает стандарт, поэтому материнская плата не зависит от выбора BMC, а одна карта управления с проверенной прошивкой подходит к разным платам. Для команды: «BMC становится сменным модулем, как блок питания».", "usage": {"code": false, "without": "Для каждой новой материнской платы BMC и его защиту разводят и проверяют заново.", "with": "Новая плата получает уже проверенную карту DC-SCM с тем же BMC и той же прошивкой.", "benefit": "BMC и защиту проверяют один раз на много плат"}, "img": {"src": "img/openbmc_bmc/40.svg", "alt": "Материнская плата с CPU и памятью, разъём и сменная карта, на которой BMC, корень доверия, флеш и сеть"}}, {"q": "Ты хочешь включить хост прямо с консоли BMC. Вывод сокращён:\n```\n$ busctl introspect xyz.openbmc_project.State.Host /xyz/openbmc_project/state/host0\nNAME                             TYPE      SIGNATURE VALUE                                           FLAGS\norg.freedesktop.DBus.Properties  interface -         -                                               -\n.Get                             method    ss        -                                               -\n.Set                             method    ssv       -                                               -\nxyz.openbmc_project.State.Host   interface -         -                                               -\n.CurrentHostState                property  s         \"xyz.openbmc_project.State.Host.HostState.Off\"  emits-change\n.RequestedHostTransition         property  s         \"xyz.openbmc_project.State.Host.Transition.Off\" emits-change writable\n```\nКакая команда включит хост?", "options": ["set-property для CurrentHostState со значением …Host.HostState.Running", "set-property для RequestedHostTransition со значением On, одним словом", "Вызов Set у CurrentHostState со строкой …Host.Transition.On", "set-property для RequestedHostTransition со значением …Host.Transition.On"], "correct": 3, "explain": "Шаг 1: в интерфейсе xyz.openbmc_project.State.Host флаг writable есть только у RequestedHostTransition: Current… показывает, что есть, Requested… — чего хотят. Шаг 2: тип s, а значение — полное имя элемента перечисления, как в выводе: xyz.openbmc_project.State.Host.Transition.On; короткое On sdbusplus отвергнет как неизвестное значение. Шаг 3: busctl set-property xyz.openbmc_project.State.Host /xyz/openbmc_project/state/host0 xyz.openbmc_project.State.Host RequestedHostTransition s xyz.openbmc_project.State.Host.Transition.On. CurrentHostState станет Running сам, когда хост запустится.", "usage": {"code": true, "without": "busctl set-property xyz.openbmc_project.State.Host \\\n  /xyz/openbmc_project/state/host0 \\\n  xyz.openbmc_project.State.Host RequestedHostTransition s On\n# ошибка: On — не элемент перечисления", "with": "busctl set-property xyz.openbmc_project.State.Host \\\n  /xyz/openbmc_project/state/host0 \\\n  xyz.openbmc_project.State.Host RequestedHostTransition s \\\n  xyz.openbmc_project.State.Host.Transition.On", "benefit": "Хост включается одной командой с консоли BMC"}}, {"q": "Сервер уже 10 минут не загружает ОС. На BMC:\n```\n$ obmcutil state\nCurrentBMCState     : xyz.openbmc_project.State.BMC.BMCState.Ready\nCurrentPowerState   : xyz.openbmc_project.State.Chassis.PowerState.On\nCurrentHostState    : xyz.openbmc_project.State.Host.HostState.Running\nBootProgress        : xyz.openbmc_project.State.Boot.Progress.ProgressStages.MemoryInit\nOperatingSystemState: xyz.openbmc_project.State.OperatingSystem.Status.OSStatus.Inactive\n```\nКуда смотреть дальше?", "options": ["В сам BMC: он ещё не готов, его надо перезагрузить и при необходимости перепрошить", "В консоль хоста и журнал событий: его прошивка встала на инициализации памяти", "В блок питания: без PGOOD корпус так и не включился, проверить линию питания", "В Redfish: хост выключен, нужно повторить ComputerSystem.Reset с ResetType On"], "correct": 1, "explain": "Шаг 1: BMCState.Ready — BMC в порядке. Шаг 2: PowerState.On — питание корпуса поднялось, значит PGOOD пришёл. Шаг 3: HostState.Running и BootProgress = MemoryInit при OSStatus.Inactive — прошивка хоста запустилась, но 10 минут стоит на инициализации памяти и до ОС не дошла. Дальше — консоль хоста (obmc-console, SOL) и журнал событий: ошибки памяти, если хост их сообщил. Перезагрузка BMC или повторный On ничего не дадут.", "usage": {"code": true, "without": "obmcutil poweroff\nobmcutil poweron\n# по кругу, не зная, где встала загрузка", "with": "obmcutil state\nssh -p 2200 root@bmc1          # консоль хоста\nbusctl tree xyz.openbmc_project.Logging", "benefit": "Проблема найдена по трём строкам состояния"}}, {"q": "Скрипт включает сервер через Redfish и получает успешный ответ. Через минуту:\n```\n$ curl -sk -u admin:$PW https://bmc1/redfish/v1/Systems/system | grep PowerState\n  \"PowerState\": \"Off\",\n$ busctl get-property xyz.openbmc_project.State.Host /xyz/openbmc_project/state/host0 \\\n    xyz.openbmc_project.State.Host RequestedHostTransition\ns \"xyz.openbmc_project.State.Host.Transition.On\"\n$ busctl get-property xyz.openbmc_project.State.Chassis /xyz/openbmc_project/state/chassis0 \\\n    xyz.openbmc_project.State.Chassis CurrentPowerState\ns \"xyz.openbmc_project.State.Chassis.PowerState.Off\"\n```\nГде порвалась цепочка со схемы?", "options": ["В bmcweb: запрос не дошёл до D-Bus, смотреть журнал bmcweb", "Ниже D-Bus: в юнитах включения питания или в сигнале PGOOD", "В скрипте: ResetType On не тот, нужен ForceOn или PowerCycle", "Нигде: Redfish кэширует PowerState, надо подождать пару минут"], "correct": 1, "explain": "Шаг 1: RequestedHostTransition = On — запрос прошёл bmcweb и D-Bus и дошёл до phosphor-state-manager. Шаг 2: CurrentPowerState корпуса = Off — питание не поднялось, значит сломалось ниже: в юнитах systemd, которые дёргают GPIO, или PGOOD не пришёл. Шаг 3: смотреть systemctl list-jobs и журнал юнитов obmc-chassis-poweron@0 и obmc-host-start@0, потом линию PGOOD. PowerState в Redfish bmcweb читает с того же D-Bus при каждом запросе, кэш ни при чём.", "usage": {"code": true, "without": "# повторять curl с разными ResetType\n# и ждать: вдруг включится", "with": "systemctl list-jobs\njournalctl -b -u 'obmc-chassis-poweron@0.target' \\\n  -u 'obmc-host-start@0.target'", "benefit": "Обрыв цепочки находится за три команды"}, "img": {"src": "img/openbmc_bmc/43.svg", "alt": "Полная цепочка включения сервера: админ с curl → bmcweb → D-Bus → phosphor-state-manager → systemd → GPIO хоста и PGOOD"}}, {"q": "Скрипт писали для серверов другого производителя. На OpenBMC он падает:\n```\n$ curl -sk -u admin:$PW -X POST -H 'Content-Type: application/json' -d '{\"ResetType\":\"On\"}' \\\n    https://bmc1/redfish/v1/Systems/System.Embedded.1/Actions/ComputerSystem.Reset\n# HTTP 404, ResourceNotFound\n$ curl -sk -u admin:$PW https://bmc1/redfish/v1/Systems | grep odata.id\n  \"@odata.id\": \"/redfish/v1/Systems\",\n      \"@odata.id\": \"/redfish/v1/Systems/system\"\n```\nКак исправить скрипт, чтобы он работал с обоими?", "options": ["Заменить System.Embedded.1 на system: у OpenBMC это имя задано стандартом", "Перейти на IPMI: в Redfish пути у каждого производителя свои, а IPMI один", "Попросить разработчиков OpenBMC добавить псевдоним System.Embedded.1", "Брать ссылку на систему из коллекции Systems, а путь действия — из её Actions"], "correct": 3, "explain": "Шаг 1: 404 — такого ресурса нет; стандарт не фиксирует идентификаторы членов коллекции, у каждого сервиса свои. Шаг 2: GET /redfish/v1/Systems отдаёт ссылки на членов — берём @odata.id, а не собираем путь руками. Шаг 3: в ресурсе системы раздел Actions даёт target для #ComputerSystem.Reset, а ResetActionInfo — допустимые значения ResetType. Так один скрипт работает с любым Redfish-сервисом; жёстко вписанный system сломается на следующем производителе.", "usage": {"code": true, "without": "URL=https://bmc1/redfish/v1/Systems/System.Embedded.1\ncurl -sk -u admin:$PW -X POST \\\n  $URL/Actions/ComputerSystem.Reset -d '{\"ResetType\":\"On\"}'", "with": "SYS=$(curl -sk -u admin:$PW https://bmc1/redfish/v1/Systems \\\n  | jq -r '.Members[0][\"@odata.id\"]')\nT=$(curl -sk -u admin:$PW https://bmc1$SYS \\\n  | jq -r '.Actions[\"#ComputerSystem.Reset\"].target')\ncurl -sk -u admin:$PW -X POST -H 'Content-Type: application/json' \\\n  -d '{\"ResetType\":\"On\"}' https://bmc1$T", "benefit": "Один скрипт для серверов разных производителей"}}, {"q": "На плату добавили датчик TMP75 на шине 7, адрес 0x48. В Redfish его нет. На BMC:\n```\n$ cat /sys/bus/i2c/devices/7-0048/hwmon/hwmon*/temp1_input\n41250\n$ busctl tree xyz.openbmc_project.HwmonTempSensor\n`- /xyz\n  `- /xyz/openbmc_project\n    `- /xyz/openbmc_project/sensors\n      `- /xyz/openbmc_project/sensors/temperature\n        `- /xyz/openbmc_project/sensors/temperature/CPU_Temp\n```\nКакая там температура и где порвалась цепочка?", "options": ["41 250 °C; драйвер ядра считает неверно, нужен патч в драйвер hwmon", "4,125 °C; датчик неисправен, и bmcweb правильно скрывает его из Redfish", "41,25 °C; в ядре значение есть, а на D-Bus нет: нет конфига entity-manager", "41,25 °C; на D-Bus он есть, а bmcweb показывает новые датчики после перезагрузки"], "correct": 2, "explain": "Шаг 1: hwmon отдаёт температуру в миллиградусах: 41250 / 1000 = 41,25 °C — драйвер ядра работает, датчик жив. Шаг 2: на D-Bus объекта нет, есть только CPU_Temp — его не создал dbus-sensors, а bmcweb показывать нечего. Шаг 3: dbus-sensors заводит датчики только по конфигурации из entity-manager: нужна запись в Exposes с Type TMP75, Bus 7, Address 0x48 в JSON-конфиге платы, чьё условие Probe совпадает. Проверка — busctl tree xyz.openbmc_project.EntityManager.", "usage": {"code": true, "without": "# патчить dbus-sensors, чтобы он «увидел» датчик", "with": "# в Exposes JSON-конфига платы:\n{\"Name\": \"Inlet_Temp\", \"Type\": \"TMP75\", \"Bus\": 7, \"Address\": \"0x48\"}\n\nbusctl tree xyz.openbmc_project.EntityManager", "benefit": "Датчик появляется на D-Bus и в Redfish без нового кода"}}, {"q": "После правки JSON-конфига платы вентиляторы зоны 0 крутятся на 100 %, хотя все температуры около 35 °C. В зону 0 входят датчики Inlet_Temp и CPU_Temp. На BMC:\n```\n$ busctl tree xyz.openbmc_project.HwmonTempSensor | grep temperature/\n        `- /xyz/openbmc_project/sensors/temperature/CPU_Temp\n```\nПочему вентиляторы на максимуме и что чинить?", "options": ["PID зоны 0 раскачался: уменьшить коэффициенты регулятора в конфиге этой зоны", "Новый конфиг поднял уставку: снизить целевую температуру зоны 0 до 30 °C", "Вентиляторы зоны 0 сломаны: раз обороты не падают, их пора менять целиком", "Зона 0 в безопасном режиме из-за пропавшего датчика: вернуть Inlet_Temp на D-Bus"], "correct": 3, "explain": "Шаг 1: температуры низкие, а обороты максимальные — регулятор не следует за температурой, значит зона не в обычном режиме. Шаг 2: из двух датчиков зоны на D-Bus остался только CPU_Temp, Inlet_Temp пропал после правки конфига; phosphor-pid-control при пропавшем или не обновляющемся датчике переводит зону в безопасный режим (failsafe) с высокими оборотами. Шаг 3: чинить датчик — проверить его запись в Exposes: имя, шину, адрес. Коэффициенты PID и уставку крутить бесполезно: в failsafe зона их не использует.", "usage": {"code": true, "without": "# подбирать коэффициенты PID, пока шумит", "with": "busctl tree xyz.openbmc_project.HwmonTempSensor\njournalctl -b -u phosphor-pid-control | tail", "benefit": "Чинится причина, а не обороты"}}, {"q": "Для своей платы нужно включить в bmcweb опцию сборки meson, выключенную по умолчанию. Рецепт bmcweb_git.bb лежит в meta-phosphor. Что на месте «?» на схеме?", "options": ["Правка bmcweb_git.bb прямо в meta-phosphor, раз он в том же дереве", "Строка в local.conf своей сборки: так её получат все, кто собирает плату", "bmcweb_%.bbappend в слое платформы с EXTRA_OEMESON:append", "Правка meson_options.txt в исходниках bmcweb в каталоге tmp/work"], "correct": 2, "explain": "Шаг 1: meta-phosphor — общий слой проекта; правка в нём потеряется при обновлении дерева и заденет все платы. Шаг 2: свой слой платформы дополняет чужой рецепт файлом bmcweb_%.bbappend (% — любая версия). Шаг 3: в нём EXTRA_OEMESON:append = \" -D<опция>=enabled\"; для патча к исходникам — FILESEXTRAPATHS и SRC_URI += \"file://….patch\". local.conf живёт только в твоём каталоге сборки, а tmp/work стирается при чистке. Для команды: «Чужой рецепт не правят: к нему пишут .bbappend в своём слое». Аналогия с RDK-B: так же свой .bbappend к рецепту из meta-rdk-broadband вместо правки чужого слоя.", "usage": {"code": true, "without": "# meta-phosphor/recipes-phosphor/interfaces/bmcweb_git.bb\nEXTRA_OEMESON += \" -D<опция>=enabled\"\n# потеряется при обновлении дерева", "with": "# meta-<платформа>/recipes-phosphor/interfaces/bmcweb_%.bbappend\nEXTRA_OEMESON:append = \" -D<опция>=enabled\"\n\nbitbake-layers show-appends bmcweb", "benefit": "Правка своей платы не трогает чужой слой и переживает обновления"}, "img": {"src": "img/openbmc_bmc/47.svg", "alt": "От рецепта до процесса: meta-phosphor с bmcweb_git.bb → «?» → bitbake → образ obmc-phosphor-image → процесс bmcweb на чипе BMC"}}, {"q": "На самом сервере команда работает, а с ноутбука админа — нет:\n```\nhost$ ipmitool mc info                # через /dev/ipmi0\nDevice ID                 : 32\nlaptop$ curl -sk -u admin:$PW https://bmc1/redfish/v1/Managers/bmc | grep -c FirmwareVersion\n1\nlaptop$ ipmitool -I lanplus -H bmc1 -U admin -E mc info\nError: Unable to establish IPMI v2 / RMCP+ session\n```\nЧто из этого следует?", "options": ["Сломан только IPMI по LAN: netipmid, UDP 623 или доступ учётки к IPMI", "Упал ipmid на BMC: перезапустить его, и сетевой IPMI вернётся сам", "Сеть управления до BMC не работает: проверить кабель, порт и VLAN", "BMC завис наполовину и теперь отвечает только хосту по шине eSPI"], "correct": 0, "explain": "Шаг 1: ipmitool на хосте ходит по KCS через /dev/ipmi0 — ответ пришёл, значит BMC и ipmid живы. Шаг 2: Redfish с ноутбука ответил той же учётной записи — сеть управления и пароль в порядке. Шаг 3: не работает только RMCP+ на UDP 623: смотреть, запущен ли netipmid (phosphor-ipmi-net), не закрыт ли UDP 623 и разрешён ли учётке доступ к IPMI. IPMI по LAN часто выключают нарочно — тогда это не поломка, а политика.", "usage": {"code": true, "without": "# перезагрузить BMC, раз IPMI не отвечает", "with": "systemctl status 'phosphor-ipmi-net@*'\n# с ноутбука — Redfish вместо IPMI:\ncurl -sk -u admin:$PW https://bmc1/redfish/v1/Managers/bmc", "benefit": "Из трёх путей к BMC сразу видно сломанный"}}, {"q": "Ты запустил образ romulus в QEMU и включаешь хост. Через минуту (вывод сокращён):\n```\nroot@romulus:~# obmcutil poweron\nroot@romulus:~# obmcutil state\nCurrentBMCState     : xyz.openbmc_project.State.BMC.BMCState.Ready\nCurrentPowerState   : xyz.openbmc_project.State.Chassis.PowerState.Off\nCurrentHostState    : xyz.openbmc_project.State.Host.HostState.Off\n```\nЧто это значит?", "options": ["Образ собран неверно: пересобрать romulus с нуля и запустить снова", "BMC не готов: состояние Ready значит, что он ещё загружается", "Команда не дошла: obmcutil работает только по сети через Redfish", "Норма для эмулятора: QEMU изображает только чип BMC, хоста и PGOOD нет"], "correct": 3, "explain": "Шаг 1: BMCState.Ready — BMC загрузился; obmcutil — shell-обёртка над busctl и работает локально. Шаг 2: команда ушла, state-manager запустил цепочку systemd и дёрнул GPIO, но корпус остался Off: подтверждения питания нет. Шаг 3: QEMU с машиной romulus эмулирует чип AST2500 и периферию BMC, а сервера за ним нет — включаться нечему. Для команды: «Эмулятор BMC хорош для изучения программ, но не железа».", "usage": {"code": true, "without": "# пересобирать образ, чтобы «починить»\n# включение хоста в QEMU", "with": "# в QEMU изучать программы BMC:\nbusctl tree xyz.openbmc_project.State.Host\ncurl -k -u root https://127.0.0.1:2443/redfish/v1   # порт, проброшенный в QEMU", "benefit": "Ожидания от эмулятора совпадают с тем, что он умеет"}}, {"q": "Ты нашёл баг в bmcweb и починил его патчем в bmcweb_%.bbappend своего слоя. Как сделать, чтобы патч не пришлось носить при каждом обновлении?", "options": ["Открыть pull request в openbmc/openbmc на GitHub с этим патчем в рецепте bmcweb", "Отправить правку в Gerrit для openbmc/bmcweb, а после нового SRCREV убрать патч", "Положить патч в meta-phosphor через Gerrit openbmc/openbmc, рядом с рецептом", "Указать в своём bbappend SRCREV на коммит в своём форке bmcweb с правкой"], "correct": 1, "explain": "Шаг 1: исходники bmcweb живут в openbmc/bmcweb, рецепт — в openbmc/openbmc; чинить надо там, где код. Шаг 2: правка уходит в Gerrit (git push origin HEAD:refs/for/master), GitHub — только зеркало. Шаг 3: после слияния рецепт bmcweb в openbmc/openbmc переходит на новый SRCREV; когда твоё дерево его подтянет, патч из bbappend удаляют. Патч рядом с чужим рецептом или свой форк — тот же груз, только в другом месте.", "usage": {"code": true, "without": "# bmcweb_%.bbappend\nSRC_URI += \"file://0001-fix-crash.patch\"\n# переносить при каждом обновлении дерева", "with": "cd bmcweb && git commit -s\ngit push origin HEAD:refs/for/master\n# после слияния и нового SRCREV — убрать патч из bbappend", "benefit": "Исправление живёт в проекте, а не в твоём слое"}}];
+  const STORAGE_KEY = "learntest_" + TEST_ID;
+  const BLOCK_NAMES = [
+    "Теоретический фундамент",
+    "Углублённая теория",
+    "Анализ и проектирование",
+    "Синтез и кейсы",
+    "Практика и расчёты"
+  ];
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return { current: 0, answers: {} };
+  }
+  function saveState() {
+    const now = Date.now();
+    state.updatedAt = now;   // по нему синхронизация решает, какая копия свежее
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    // Для «Продолжить» на главной — только обычный проход: работа над ошибками
+    // не «продолжение». Не "learntest_": такие ключи sync.js шлёт в Drive.
+    if (!drill) {
+      try { localStorage.setItem("ltindex_last", JSON.stringify({ slug: TEST_ID, at: now })); } catch (e) {}
+    }
+    scheduleUpload();
+  }
+
+  // Тихая отправка в Drive через несколько секунд после ответа — только пока
+  // Google-токен жив (его выдаёт любая синхронизация по кнопке, ~на час).
+  let uploadTimer = null;
+  function scheduleUpload() {
+    if (!window.LTSync || !LTSync.hasToken()) return;
+    clearTimeout(uploadTimer);
+    uploadTimer = setTimeout(flushUpload, 4000);
+  }
+  function flushUpload() {
+    if (uploadTimer === null) return;
+    clearTimeout(uploadTimer);
+    uploadTimer = null;
+    LTSync.uploadOne(STORAGE_KEY);
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushUpload();
+  });
+
+  // Fisher-Yates shuffle (returns a new array, does not mutate input)
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+    }
+    return a;
+  }
+
+  // Builds a fresh, randomized copy of QUESTIONS: each question's options are
+  // shuffled and its correct-answer index remapped to match. Every other field
+  // (q, explain, usage, ...) is carried over untouched. Regenerated on every
+  // page load and on every "reset progress" click (never persisted), so the
+  // position of the correct answer can't be memorized across attempts.
+  function buildShuffledQuestions() {
+    return QUESTIONS.map(q => {
+      const order = shuffle(q.options.map((_, i) => i));
+      return Object.assign({}, q, {
+        options: order.map(i => q.options[i]),
+        correct: order.indexOf(q.correct)
+      });
+    });
+  }
+
+  let state = loadState();
+  let SHUFFLED = buildShuffledQuestions();
+
+  const quizArea = document.getElementById("quizArea");
+  const resultArea = document.getElementById("resultArea");
+  const progressFill = document.getElementById("progressFill");
+  const progressText = document.getElementById("progressText");
+  const blockLabel = document.getElementById("blockLabel");
+
+  function blockOf(idx) { return Math.floor(idx / 10); }
+
+  // Карточка вопроса: варианты, объяснение, пример. Общая для теста и для
+  // «Работы над ошибками» / «Повторения», чтобы они не разошлись видом.
+  function cardHtml(q, answered) {
+    let html = '<div class="card">';
+    html += '<div class="question">' + renderQuestion(q.q) + '</div>';
+    html += imageHtml(q.img);
+    html += '<div class="qsearch"><a class="iconbtn" target="_blank" rel="noopener" href="https://www.google.com/search?q=' + encodeURIComponent(questionSearchText(q.q)) + '">🔍 Найти в Google</a></div>';
+    html += '<div class="options">';
+    q.options.forEach((opt, i) => {
+      let cls = "opt";
+      if (answered) {
+        cls += " disabled";
+        if (i === q.correct) cls += " correct";
+        else if (opt === answered.selectedText && !answered.correct) cls += " wrong";
+        else cls += " dim";
+      }
+      html += '<button class="' + cls + '" data-i="' + i + '">' + renderOption(opt) + '</button>';
+    });
+    html += '</div>';
+    html += '<div class="explain' + (answered ? ' show' : '') + '" id="explainBox">' + escapeHtml(q.explain || "") + '</div>';
+    if (q.usage) {
+      const u = q.usage;
+      const wrap = (s) => u.code ? ('<pre>' + escapeHtml(s || "") + '</pre>') : ('<div class="u-text">' + escapeHtml(s || "") + '</div>');
+      html += '<div class="usage' + (answered ? ' show' : '') + '">';
+      html += '<div class="u-part u-without"><div class="u-label">Без этого</div>' + wrap(u.without) + '</div>';
+      html += '<div class="u-part u-with"><div class="u-label">С этим</div>' + wrap(u.with) + '</div>';
+      if (u.benefit) html += '<div class="u-benefit">✅ Выгода: ' + escapeHtml(u.benefit) + '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function render() {
+    if (state.current >= QUESTIONS.length) {
+      renderResult();
+      return;
+    }
+    resultArea.style.display = "none";
+    quizArea.style.display = "block";
+
+    const idx = state.current;
+    const q = SHUFFLED[idx];
+    const answered = state.answers[idx];
+
+    progressFill.style.width = Math.round((idx / QUESTIONS.length) * 100) + "%";
+    progressText.textContent = (idx + 1) + " / " + QUESTIONS.length;
+    blockLabel.textContent = "Блок " + (blockOf(idx) + 1) + ": " + BLOCK_NAMES[blockOf(idx)];
+
+    let html = cardHtml(q, answered);
+    html += '<div class="nav">';
+    html += '<button class="btn secondary" id="prevBtn"' + (idx === 0 ? ' disabled' : '') + '>Назад</button>';
+    html += '<button class="btn" id="nextBtn"' + (answered ? '' : ' disabled') + '>' + (idx === QUESTIONS.length - 1 ? 'Завершить' : 'Далее') + '</button>';
+    html += '</div>';
+
+    quizArea.innerHTML = html;
+    typeset(quizArea);
+
+    quizArea.querySelectorAll(".opt").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (state.answers[idx]) return;
+        const sel = parseInt(btn.dataset.i, 10);
+        state.answers[idx] = { selectedText: q.options[sel], correct: sel === q.correct };
+        saveState();
+        render();
+      });
+    });
+    document.getElementById("prevBtn").addEventListener("click", () => {
+      state.current = Math.max(0, idx - 1);
+      saveState();
+      render();
+    });
+    document.getElementById("nextBtn").addEventListener("click", () => {
+      state.current = idx + 1;
+      saveState();
+      render();
+    });
+  }
+
+  function renderResult() {
+    quizArea.style.display = "none";
+    resultArea.style.display = "block";
+    progressFill.style.width = "100%";
+    progressText.textContent = QUESTIONS.length + " / " + QUESTIONS.length;
+    blockLabel.textContent = "Тест завершён";
+
+    let correct = 0;
+    const blockStats = [0, 0, 0, 0, 0];
+    const blockTotals = [0, 0, 0, 0, 0];
+    QUESTIONS.forEach((q, i) => {
+      const b = blockOf(i);
+      blockTotals[b]++;
+      if (state.answers[i] && state.answers[i].correct) {
+        correct++;
+        blockStats[b]++;
+      }
+    });
+
+    let html = '<div class="card result">';
+    html += '<div class="score">' + correct + ' / ' + QUESTIONS.length + '</div>';
+    html += '<div style="color:var(--muted); margin-top:6px;">правильных ответов</div>';
+    html += '<div class="blockscores">';
+    BLOCK_NAMES.forEach((name, i) => {
+      html += '<div class="row"><span>' + (i + 1) + '. ' + name + '</span><span>' + blockStats[i] + ' / ' + blockTotals[i] + '</span></div>';
+    });
+    html += '</div></div>';
+    const open = LTProgress.mistakes(state).length;
+    if (open) html += '<div class="nav"><button class="btn" id="mistakesBtn">🔁 Работа над ошибками (' + open + ')</button></div>';
+    html += '<div class="nav"><button class="btn' + (open ? ' secondary' : '') + '" id="reviewBtn">Пересмотреть ответы</button></div>';
+    resultArea.innerHTML = html;
+    typeset(resultArea);
+
+    if (open) document.getElementById("mistakesBtn").addEventListener("click", () => startDrill("mistakes"));
+    document.getElementById("reviewBtn").addEventListener("click", () => {
+      state.current = 0;
+      render();
+    });
+  }
+
+  // ---- «Работа над ошибками» ----
+  // Отдельный проход только по вопросам с неисправленной ошибкой. Счёт теста
+  // (state.answers) он не трогает: исправленная ошибка пишется в state.fixed.
+  let drill = null;   // {kind, queue: [индексы], pos, answer: {sel, correct} | null, right}
+
+  function startDrill(kind) {
+    const queue = LTProgress.mistakes(state);
+    if (!queue.length) {
+      drill = null;
+      history.replaceState(null, "", location.pathname);
+      render();
+      toast("Ошибок не осталось — всё исправлено");
+      return;
+    }
+    drill = { kind: kind, queue: queue, pos: 0, answer: null, right: 0 };
+    SHUFFLED = buildShuffledQuestions();
+    window.scrollTo(0, 0);
+    renderDrill();
+  }
+
+  function leaveDrill() {
+    drill = null;
+    history.replaceState(null, "", location.pathname);
+    render();
+  }
+
+  function renderDrill() {
+    if (drill.pos >= drill.queue.length) { renderDrillResult(); return; }
+    resultArea.style.display = "none";
+    quizArea.style.display = "block";
+    const idx = drill.queue[drill.pos];
+    const q = SHUFFLED[idx];
+    const answered = drill.answer ? { selectedText: q.options[drill.answer.sel], correct: drill.answer.correct } : null;
+    progressFill.style.width = Math.round((drill.pos / drill.queue.length) * 100) + "%";
+    progressText.textContent = (drill.pos + 1) + " / " + drill.queue.length;
+    blockLabel.textContent = "Работа над ошибками · вопрос " + (idx + 1);
+
+    let html = cardHtml(q, answered);
+    html += '<div class="nav">';
+    html += '<button class="btn secondary" id="drillExitBtn">Выйти</button>';
+    html += '<button class="btn" id="drillNextBtn"' + (answered ? '' : ' disabled') + '>' + (drill.pos === drill.queue.length - 1 ? 'Итог' : 'Далее') + '</button>';
+    html += '</div>';
+    quizArea.innerHTML = html;
+    typeset(quizArea);
+
+    quizArea.querySelectorAll(".opt").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (drill.answer) return;
+        const sel = parseInt(btn.dataset.i, 10);
+        const ok = sel === q.correct;
+        drill.answer = { sel: sel, correct: ok };
+        if (ok) drill.right++;
+        if (ok) { state.fixed = state.fixed || {}; state.fixed[idx] = Date.now(); saveState(); }
+        renderDrill();
+      });
+    });
+    document.getElementById("drillExitBtn").addEventListener("click", leaveDrill);
+    document.getElementById("drillNextBtn").addEventListener("click", () => {
+      drill.pos++;
+      drill.answer = null;
+      window.scrollTo(0, 0);
+      renderDrill();
+    });
+  }
+
+  function renderDrillResult() {
+    quizArea.style.display = "none";
+    resultArea.style.display = "block";
+    progressFill.style.width = "100%";
+    const total = drill.queue.length;
+    let html = '<div class="card result">';
+    html += '<div class="score">' + drill.right + ' / ' + total + '</div>';
+    const left = LTProgress.mistakes(state).length;
+    blockLabel.textContent = "Работа над ошибками · итог";
+    html += '<div style="color:var(--muted); margin-top:6px;">исправлено за этот заход</div>';
+    html += '<div style="margin-top:14px;">' + (left ? ('Осталось ошибок: ' + left) : 'Все ошибки этого теста исправлены') + '</div></div>';
+    if (left) html += '<div class="nav"><button class="btn" id="drillAgainBtn">🔁 Ещё раз (' + left + ')</button></div>';
+    html += '<div class="nav"><button class="btn secondary" id="drillDoneBtn">К тесту</button></div>';
+    resultArea.innerHTML = html;
+    typeset(resultArea);
+    const again = document.getElementById("drillAgainBtn");
+    if (again) again.addEventListener("click", () => startDrill("mistakes"));
+    document.getElementById("drillDoneBtn").addEventListener("click", leaveDrill);
+  }
+
+  // Картинка к вопросу (поле img из content/<slug>.json, путь от корня сайта).
+  // Касание открывает её целиком: на телефоне так её можно увеличить.
+  function imageHtml(img) {
+    if (!img || !img.src) return "";
+    const src = "../" + escapeAttr(img.src);
+    let html = '<figure class="qimg"><a href="' + src + '" target="_blank" rel="noopener">';
+    html += '<img src="' + src + '" alt="' + escapeAttr(img.alt) + '" loading="lazy"></a>';
+    if (img.credit) html += '<figcaption>' + escapeHtml(img.credit) + '</figcaption>';
+    return html + '</figure>';
+  }
+
+  function escapeAttr(s) {
+    return escapeHtml(s).replace(/"/g, "&quot;");
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s == null ? "" : s;
+    return div.innerHTML;
+  }
+
+  // Текст вопроса может нести фрагменты кода в тройных кавычках: они идут в
+  // <pre> моноширинным шрифтом, остальное — как обычный текст. Вопрос без
+  // тройных кавычек рендерится ровно как раньше.
+  function renderQuestion(text) {
+    const parts = String(text == null ? "" : text).split("```");
+    let out = "";
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 1) out += '<pre class="qcode">' + escapeHtml(parts[i].replace(/^\n/, "").replace(/\n$/, "")) + '</pre>';
+      else if (parts[i]) out += escapeHtml(parts[i]);
+    }
+    return out;
+  }
+
+  // Поиск в Google — по тексту вопроса без фрагментов кода.
+  function questionSearchText(text) {
+    const parts = String(text == null ? "" : text).split("```");
+    return parts.filter(function (_, i) { return i % 2 === 0; }).join(" ")
+      .replace(/\\[()\[\]]/g, " ").replace(/\\([a-zA-Z]+)/g, "$1").replace(/\s+/g, " ").trim();
+  }
+
+  // Формулы в тексте: \( ... \) в строке, \[ ... \] отдельной строкой (KaTeX,
+  // файлы в vendor/katex). Знак $ разделителем не служит: в тестах по
+  // ассемблеру и shell он означает константу и переменную. Код в <pre> и
+  // <code> не трогается. Без KaTeX текст остаётся как есть.
+  function typeset(el) {
+    if (!el || typeof renderMathInElement !== "function") return;
+    renderMathInElement(el, {
+      delimiters: [
+        { left: "\\(", right: "\\)", display: false },
+        { left: "\\[", right: "\\]", display: true }
+      ],
+      throwOnError: false
+    });
+  }
+
+  // Вариант ответа целиком в обратных кавычках — это код, моноширинно.
+  function renderOption(opt) {
+    const s = String(opt == null ? "" : opt);
+    if (s.length > 2 && s.charAt(0) === "`" && s.charAt(s.length - 1) === "`") {
+      return '<code class="optcode">' + escapeHtml(s.slice(1, -1)) + '</code>';
+    }
+    return escapeHtml(s);
+  }
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    if (confirm("Сбросить весь прогресс этого теста?")) {
+      state = { current: 0, answers: {} };
+      SHUFFLED = buildShuffledQuestions();
+      saveState();
+      render();
+    }
+  });
+
+  // ---- Синхронизация всех тестов (Google Drive), общий модуль sync.js ----
+  const toastEl = document.getElementById("toast");
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    setTimeout(() => toastEl.classList.remove("show"), 2500);
+  }
+
+  const mode = new URLSearchParams(location.search).get("mode");
+  if (mode === "mistakes") startDrill(mode);
+  else render();
+
+  const syncModal = document.getElementById("syncModal");
+  const syncStatus = document.getElementById("syncStatus");
+  const uploadBtn = document.getElementById("syncUploadBtn");
+  const downloadBtn = document.getElementById("syncDownloadBtn");
+
+  function setBusy(busy) {
+    uploadBtn.disabled = busy; downloadBtn.disabled = busy;
+    document.getElementById("syncMergeBtn").disabled = busy;
+  }
+
+  document.getElementById("syncBtn").addEventListener("click", () => {
+    if (!window.LTSync || !LTSync.configured()) {
+      toast("Синхронизация не настроена: укажите GOOGLE_CLIENT_ID в config.js");
+      return;
+    }
+    syncStatus.textContent = LTSync.hasToken()
+      ? "Google уже подключён — вход не потребуется."
+      : "Один вход — синхронизируются сразу все тесты.";
+    syncModal.classList.add("show");
+  });
+  document.getElementById("syncCloseBtn").addEventListener("click", () => syncModal.classList.remove("show"));
+
+  document.getElementById("syncMergeBtn").addEventListener("click", () => {
+    setBusy(true);
+    syncStatus.textContent = "Синхронизация…";
+    LTSync.syncAll({
+      interactive: true,
+      onDone: (s) => {
+        setBusy(false);
+        if (!drill) { state = loadState(); render(); }
+        toast("Получено " + s.pulled + ", отправлено " + s.pushed + (s.failed ? ", ошибок " + s.failed : ""));
+        syncModal.classList.remove("show");
+      },
+      onError: (msg) => { setBusy(false); toast(msg); syncStatus.textContent = msg; }
+    });
+  });
+
+  uploadBtn.addEventListener("click", () => {
+    setBusy(true);
+    syncStatus.textContent = "Отправка…";
+    LTSync.uploadAll({
+      onProgress: (d, t) => { syncStatus.textContent = "Отправка… " + d + "/" + t; },
+      onDone: (ok, failed) => {
+        setBusy(false);
+        toast(failed ? ("Отправлено " + ok + ", ошибок: " + failed) : ("Отправлено тестов: " + ok));
+        syncModal.classList.remove("show");
+      },
+      onError: (msg) => { setBusy(false); toast(msg); syncStatus.textContent = msg; }
+    });
+  });
+
+  downloadBtn.addEventListener("click", () => {
+    if (!confirm("Заменить локальный прогресс всех тестов данными из Drive?")) return;
+    setBusy(true);
+    syncStatus.textContent = "Загрузка…";
+    LTSync.downloadAll({
+      onProgress: (d, t) => { syncStatus.textContent = "Загрузка… " + d + "/" + t; },
+      onDone: (ok, failed) => {
+        setBusy(false);
+        state = loadState();
+        render();
+        toast(failed ? ("Загружено " + ok + ", ошибок: " + failed) : ("Загружено тестов: " + ok));
+        syncModal.classList.remove("show");
+      },
+      onError: (msg) => { setBusy(false); toast(msg); syncStatus.textContent = msg; }
+    });
+  });
+})();
+</script>
+</body>
+</html>
