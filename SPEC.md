@@ -6,6 +6,28 @@ implements. Where the code gives no answer, the question goes to
 [section 9](#9-open-questions). The documentation hub is
 [docs/README.md](docs/README.md).
 
+<!-- jira-sync:start -->
+Jira: KAN-67
+
+## Tasks
+
+This list is one ticket in Jira project KAN, [KAN-67](https://igorsvolohovs.atlassian.net/browse/KAN-67). Each line is a checkbox there: tick it in Jira and the sync ticks it here; add a checkbox there and it is appended here. Done items are the features described in section 3; open items are what the project declares but the code does not do yet.
+
+- [x] Test page (section 3.1) <!-- spec-test-page -->
+- [x] Progress state (section 3.2) <!-- spec-progress-state -->
+- [x] Home page (section 3.3) <!-- spec-home-page -->
+- [x] Synchronisation with Google Drive (section 3.4) <!-- spec-synchronisation-with-google-drive -->
+- [x] Build and content checks (section 3.5) <!-- spec-build-and-content-checks -->
+- [x] One-command test creation (`scripts/new_test.py`) (section 3.6) <!-- spec-one-command-test-creation-scripts-newtest-py -->
+- [x] Study-topic harvesting (section 3.7) <!-- spec-study-topic-harvesting -->
+- [ ] Spaced repetition "Пора повторить" (declared, not implemented) <!-- spec-spaced-repetition -->
+- [ ] The multi-step practical-block rule "applies to tests the user has not passed yet", judged from Drive progress (declared, not implemented) <!-- spec-the-multi-step-practical-block-rule-applies-to-tes -->
+- [ ] `check_quality.py` "handy for CI" (declared, not implemented) <!-- spec-checkquality-py-handy-for-ci -->
+- [ ] Author's `verify.py` that recomputes every numeric answer (declared, not implemented) <!-- spec-author-s-verify-py-that-recomputes-every-numeric-a -->
+- [ ] Content block structure in the author prompt (declared, not implemented) <!-- spec-content-block-structure-in-the-author-prompt -->
+
+<!-- jira-sync:end -->
+
 ## 1. Purpose and scope
 
 The system turns test content (50 multiple-choice questions per test) into
