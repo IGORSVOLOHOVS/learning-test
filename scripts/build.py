@@ -65,6 +65,11 @@ TOPICS = {
     "robotics_modelling_kinematics_dynamics_trajectories": {"title": "RMO: Моделирование роботов: DH, якобиан, динамика, траектории, валидация", "sim": ""},
     "trends_challenges_critical_reading_and_research_gaps": {"title": "TRC: Тренды и вызовы: критическое чтение, состояние области, research gap", "sim": ""},
     "openbmc_bmc": {"title": "BMC и OpenBMC: железо, Redfish, D-Bus, Yocto", "sim": ""},
+    "rmo_axis_angle_quaternions_slerp": {"title": "RMO 2: Ось-угол, кватернионы и SLERP", "sim": ""},
+    "rmo_rotation_matrices_euler_rpy_practical1": {"title": "RMO 3: Повороты, Эйлер/RPY и Practical 1", "sim": ""},
+    "rmo_denavit_hartenberg_practical3": {"title": "RMO 4: Денавит–Хартенберг и Practical 3", "sim": ""},
+    "trc_writing_results_cmelr": {"title": "TRC 2: Writing our Results и C·M·E·L·R", "sim": ""},
+    "mda_eigenvalues_eigenvectors": {"title": "Math 10: Собственные значения и векторы", "sim": ""},
 }
 
 
