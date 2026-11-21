@@ -64,6 +64,15 @@ check("courseOf: TSI course prefixes, nothing else", () => {
   assert.strictEqual(P.courseOf("Git и патчи: format-patch, am, rebase"), null);
 });
 
+check("groupOf: every TSI test in one group whatever its status, the rest by status", () => {
+  assert.strictEqual(P.groupOf("TSI DSP 3: Ряд Фурье", null), "tsi");
+  assert.strictEqual(P.groupOf("TSI IS1: Нейронные сети", { current: 3, answers: answers(3) }), "tsi");
+  assert.strictEqual(P.groupOf("TSI TRC: Тренды и research gap", { current: 50, answers: answers(50) }), "tsi");
+  assert.strictEqual(P.groupOf("Ассемблер", null), "todo");
+  assert.strictEqual(P.groupOf("Ассемблер", { current: 3, answers: answers(3) }), "progress");
+  assert.strictEqual(P.groupOf("Ассемблер", { current: 50, answers: answers(50) }), "done");
+});
+
 // ---- sync.js on a fake Drive ----
 function loadSync(drive, { token = true, listFails = false } = {}) {
   const store = new Map();

@@ -72,10 +72,16 @@
     return m ? m[1] : null;
   }
 
+  // Группа на главной: все тесты курсов TSI — пройденные, начатые и не начатые —
+  // живут в одной группе "tsi", чтобы не искать их по трём; остальные — по статусу.
+  function groupOf(title, state) {
+    return courseOf(title) ? "tsi" : status(state);
+  }
+
   var api = {
     TOTAL: TOTAL,
     answeredCount: answeredCount, isDone: isDone, status: status, correctCount: correctCount,
-    mistakes: mistakes, pickNewer: pickNewer, courseOf: courseOf
+    mistakes: mistakes, pickNewer: pickNewer, courseOf: courseOf, groupOf: groupOf
   };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.LTProgress = api;

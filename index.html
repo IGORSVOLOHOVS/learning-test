@@ -207,10 +207,12 @@
   // Группы сверху вниз. open(b) — раскрыта ли по умолчанию; раскрыл или свернул
   // вручную — запоминается и дальше главнее умолчания.
   const GROUPS = [
+    // все тесты курсов TSI в одном месте, что бы с ними ни было (LTProgress.groupOf)
+    { key: "tsi", title: "TSI", open: () => true },
     { key: "progress", title: "В процессе", open: () => true },
     { key: "mistakes", title: "Работа над ошибками", open: () => false },
     // сама открыта, только когда больше нечем заняться, иначе это снова лента
-    { key: "todo", title: "Не начаты", open: (b) => !b.progress.length },
+    { key: "todo", title: "Не начаты", open: (b) => !b.progress.length && !b.tsi.some(it => it.st === "progress") },
     { key: "done", title: "Выполнены", open: () => false },
     { key: "labs", title: "Лаборатории", open: () => false },
   ];
@@ -322,11 +324,11 @@
 
   function renderList() {
     list.innerHTML = "";
-    const buckets = { progress: [], mistakes: [], todo: [], done: [], labs: [] };
+    const buckets = { tsi: [], progress: [], mistakes: [], todo: [], done: [], labs: [] };
     TESTS.forEach(([slug, title]) => {
       const state = loadTest(slug);
       const st = LTProgress.status(state);
-      buckets[st].push({ title, el: testCard(slug, title, state, st) });
+      buckets[LTProgress.groupOf(title, state)].push({ title, st, el: testCard(slug, title, state, st) });
       if (LTProgress.mistakes(state).length) buckets.mistakes.push({ title, el: testCard(slug, title, state, "mistakes") });
     });
     SIMS.forEach(([slug, title]) => buckets.labs.push({ title, el: simCard(slug, title) }));
